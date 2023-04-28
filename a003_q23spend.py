@@ -60,7 +60,7 @@ def no_corr_kf_module(metric_col):
         metric_col=metric_col,
         output_col_prefix=metric_col + "_NO_CORR",
         sample_size_col="ASK_COUNT",
-        process_std=0.015,
+        process_std=0.020,
     )
 
 
@@ -69,7 +69,7 @@ def corr_kf_module(metric_col):
         metric_col=metric_col,
         output_col_prefix=metric_col + "_CORR",
         sample_size_col="ASK_COUNT",
-        process_std=0.015,
+        process_std=0.020,
     )
 
 
@@ -241,20 +241,20 @@ fdb.upload(
 )
 
 # %% test
-(
-    a003_filtered
-    >> filter(
-        _.CUT_ID == 1,
-        _.OPTION == 2,
-        _.BIZCATE_CODE == 112,
-    )
-).plot(
-    x = "MONTH_YEAR",
-    y = [
-        "PERCENT_YES_SPEND",
-        "PERCENT_YES_SPEND_NO_CORR_RTS",
-        "PERCENT_YES_SPEND_CORR_RTS",
-    ]
-).legend(loc='best')
+# (
+#     a003_filtered
+#     >> filter(
+#         _.CUT_ID == 1,
+#         _.OPTION == 2,
+#         _.BIZCATE_CODE == 112,
+#     )
+# ).plot(
+#     x = "MONTH_YEAR",
+#     y = [
+#         "PERCENT_YES_SPEND",
+#         "PERCENT_YES_SPEND_NO_CORR_RTS",
+#         "PERCENT_YES_SPEND_CORR_RTS",
+#     ]
+# ).legend(loc='best')
 
 # %%

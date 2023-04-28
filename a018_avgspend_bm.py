@@ -6,6 +6,7 @@ from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
 from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
+from callbacks import Scaler
 
 
 # %%
@@ -56,7 +57,7 @@ def no_corr_kf_module(metric_col):
         metric_col=metric_col,
         output_col_prefix=metric_col + "_NO_CORR",
         sample_size_col="ASK_COUNT",
-        process_std=15,
+        process_std=0.030,
     )
 
 
@@ -65,7 +66,7 @@ def corr_kf_module(metric_col):
         metric_col=metric_col,
         output_col_prefix=metric_col + "_CORR",
         sample_size_col="ASK_COUNT",
-        process_std=15,
+        process_std=0.030,
     )
 
 
@@ -73,6 +74,7 @@ def corr_kf_module(metric_col):
 # fmt: off
 runner = Runner(
     callbacks=[
+        Scaler(),
         PivotLong(),
         ConcactPartitions()
     ]
@@ -83,6 +85,7 @@ outputs = []
 
 # %%
 a018_avgspend_bm = load_avgspend_bm()
+
 
 # %%
 # ----------------------------------------------------------------
@@ -99,12 +102,15 @@ a018_national_dl = dataloader(a018_national)
 a018_national_kf_module_no_corr = no_corr_kf_module("AVG_SPEND_NATIONAL")
 a018_national_kf_module_corr = corr_kf_module("AVG_SPEND_NATIONAL")
 
+
+# %%
 a018_national_filtered = runner.run(
     models=[
         a018_national_kf_module_no_corr,
         a018_national_kf_module_corr,
     ],
     dataloaders=a018_national_dl,
+    parallel=True
 )
 
 # %%
@@ -168,6 +174,7 @@ a018_demo_kf_module_corr = corr_kf_module("AVG_SPEND_DELTA")
 a018_demo_delta_filtered = runner.run(
     models=[a018_demo_kf_module_no_corr, a018_demo_kf_module_corr],
     dataloaders=a018_demo_delta_dl,
+    parallel=False
 )
 
 # %% apply national
@@ -235,19 +242,21 @@ fdb.upload(
 )
 
 # %% test
-(
-    a018_filtered
-    >> filter(
-        _.CUT_ID == 1,
-        _.BIZCATE_CODE == 111,
-    )
-).plot(
-    x="MONTH_YEAR",
-    y=[
-        "AVG_SPEND",
-        "AVG_SPEND_NO_CORR_RTS",
-        "AVG_SPEND_CORR_RTS",
-    ],
-).legend(loc="best")
+# (
+#     a018_filtered
+#     >> filter(
+#         _.CUT_ID == 1,
+#         _.BIZCATE_CODE == 417,
+#     )
+# ).plot(
+#     x="MONTH_YEAR",
+#     y=[
+#         "AVG_SPEND",
+#         "AVG_SPEND_NO_CORR_KF",
+#         "AVG_SPEND_NO_CORR_RTS",
+#         "AVG_SPEND_CORR_RTS",
+#     ],
+# ).legend(loc="best")
 
 # %%
+# code 424

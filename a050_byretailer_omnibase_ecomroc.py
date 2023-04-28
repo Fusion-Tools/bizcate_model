@@ -2,6 +2,7 @@
 from db import fdb, month_mapping
 import pandas as pd
 from siuba import *
+from siuba.experimental.pivot import pivot_longer
 from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
 from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
@@ -19,6 +20,7 @@ def load_ecomroc(
         # TODO: temp fix
         >> rename(
             MONTH_NUM=_.MONTH,
+            BIZCATE_CODE=_.SUB_CODE,
         )
         >> filter(
             ~_.CUT_ID.isna(),
@@ -28,30 +30,32 @@ def load_ecomroc(
         >> left_join(_, month_mapping, on="MONTH_NUM")
         >> select(
             _.CUT_ID,
-            _.CATEGORY_CODE,
+            _.BIZCATE_CODE,
             _.RETAILER_CODE,
             _.MONTH_YEAR,
             _.ASK_COUNT,
             _.ASK_WEIGHT_SPEND,
-            _.startswith("PERCENT_SPEND_FINAL_TA_AND_SHARE_ADJUSTED")
-            # 11 = TA,
-            # 12 = Think,
-            # 13 = Consider,
-            # 14 = Visit,
-            # 16 = Share
-            # _.startswith("PERCENT_"),
-            # _.startswith("TA_"),
+            _.TA == _.PERCENT_SPEND_FINAL_TA_AND_SHARE_ADJUSTED_11,
+            _.THINK == _.PERCENT_SPEND_FINAL_TA_AND_SHARE_ADJUSTED_12,
+            _.CONSIDER == _.PERCENT_SPEND_FINAL_TA_AND_SHARE_ADJUSTED_13,
+            _.VISIT == _.PERCENT_SPEND_FINAL_TA_AND_SHARE_ADJUSTED_14,
+            _.SHARE == _.PERCENT_SPEND_FINAL_TA_AND_SHARE_ADJUSTED_16,
+        )
+        >> pivot_longer(
+            _["TA", "THINK", "CONSIDER", "VISIT", "SHARE"],
+            names_to = "METRIC",
+            values_to="SCORE",
         )
         >> collect()
     )
 
     return a050_ecomroc
 
-
+# %%
 def dataloader(table):
     return DataLoader(
         table=table,
-        id_cols=["CUT_ID", "OPTION"],
+        id_cols=["CUT_ID", "RETAILER_CODE", "METRIC"],
         date_col="MONTH_YEAR",
         var_cols=["BIZCATE_CODE"],
     )
@@ -62,7 +66,7 @@ def no_corr_kf_module(metric_col):
         metric_col=metric_col,
         output_col_prefix=metric_col + "_NO_CORR",
         sample_size_col="ASK_COUNT",
-        process_std=0.015,
+        process_std=0.020,
     )
 
 
@@ -71,7 +75,7 @@ def corr_kf_module(metric_col):
         metric_col=metric_col,
         output_col_prefix=metric_col + "_CORR",
         sample_size_col="ASK_COUNT",
-        process_std=0.015,
+        process_std=0.020,
     )
 
 
@@ -89,35 +93,35 @@ runner = Runner(
 outputs = []
 
 # %%
-a003_q23spend = load_q23spend()
+a050_ecomroc = load_ecomroc()
 
 # ----------------------------------------------------------------
 # filter national
 # ----------------------------------------------------------------
 
-a003_national = (
-    a003_q23spend
+a050_national = (
+    a050_ecomroc
     >> filter(_.CUT_ID == 1)
-    >> rename(PERCENT_YES_SPEND_NATIONAL=_.PERCENT_YES_SPEND)
+    >> rename(SCORE_NATIONAL=_.SCORE)
 )
 
-a003_national_dl = dataloader(a003_national)
-a003_national_kf_module_no_corr = no_corr_kf_module("PERCENT_YES_SPEND_NATIONAL")
-a003_national_kf_module_corr = corr_kf_module("PERCENT_YES_SPEND_NATIONAL")
+a050_national_dl = dataloader(a050_national)
+a050_national_kf_module_no_corr = no_corr_kf_module("SCORE_NATIONAL")
+a050_national_kf_module_corr = corr_kf_module("SCORE_NATIONAL")
 
-a003_national_filtered = runner.run(
+a050_national_filtered = runner.run(
     models=[
-        a003_national_kf_module_no_corr,
-        a003_national_kf_module_corr,
+        a050_national_kf_module_no_corr,
+        a050_national_kf_module_corr,
     ],
-    dataloaders=a003_national_dl,
+    dataloaders=a050_national_dl,
 )
 
 # %%
-a003_national_filtered_renamed = (
-    a003_national_filtered
+a050_national_filtered_renamed = (
+    a050_national_filtered
     >> rename(
-        **{col.replace("_NATIONAL", ""): col for col in a003_national_filtered.columns}
+        **{col.replace("_NATIONAL", ""): col for col in a050_national_filtered.columns}
     )
     >> mutate(
         across(
@@ -133,87 +137,89 @@ a003_national_filtered_renamed = (
     )
 )
 
-outputs.append(a003_national_filtered_renamed)
+outputs.append(a050_national_filtered_renamed)
 
 # %%
 # ----------------------------------------------------------------
 # filter demo cuts using delta method
 # ----------------------------------------------------------------
 
-a003_demo = (
-    a003_q23spend
+a050_demo = (
+    a050_ecomroc
     >> filter(_.CUT_ID != 1)
-    >> rename(PERCENT_YES_SPEND_DEMO=_.PERCENT_YES_SPEND)
+    >> rename(SCORE_DEMO=_.SCORE)
 )
 
 # %% calculate demo cuts deltas
-a003_demo_delta = (
+a050_demo_delta = (
     inner_join(
-        a003_national
+        a050_national
         >> select(
             ~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT
         ),  # fmt: skip
-        a003_demo,
+        a050_demo,
         on=[
-            "OPTION",
+            "RETAILER_CODE", 
+            "METRIC",
             "BIZCATE_CODE",
             "MONTH_YEAR",
         ],
     )
     >> mutate(
-        PERCENT_YES_SPEND_DELTA=_.PERCENT_YES_SPEND_NATIONAL - _.PERCENT_YES_SPEND_DEMO  # fmt: skip
+        SCORE_DELTA=_.SCORE_NATIONAL - _.SCORE_DEMO  # fmt: skip
     )
-    >> select(~_.PERCENT_YES_SPEND_NATIONAL)
+    >> select(~_.SCORE_NATIONAL)
 )
 
 
 # %% filter demo cuts deltas
-a003_demo_delta_dl = dataloader(a003_demo_delta)
-a003_demo_kf_module_no_corr = no_corr_kf_module("PERCENT_YES_SPEND_DELTA")
-a003_demo_kf_module_corr = corr_kf_module("PERCENT_YES_SPEND_DELTA")
+a050_demo_delta_dl = dataloader(a050_demo_delta)
+a050_demo_kf_module_no_corr = no_corr_kf_module("SCORE_DELTA")
+a050_demo_kf_module_corr = corr_kf_module("SCORE_DELTA")
 
-a003_demo_delta_filtered = runner.run(
-    models=[a003_demo_kf_module_no_corr, a003_demo_kf_module_corr],
-    dataloaders=a003_demo_delta_dl,
+a050_demo_delta_filtered = runner.run(
+    models=[a050_demo_kf_module_no_corr, a050_demo_kf_module_corr],
+    dataloaders=a050_demo_delta_dl,
 )
 
 # %% apply national
-a003_demo_filtered = (
+a050_demo_filtered = (
     inner_join(
-        a003_national_filtered >> select(~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT),
-        a003_demo_delta_filtered,
+        a050_national_filtered >> select(~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT),
+        a050_demo_delta_filtered,
         on=[
-            "OPTION",
+            "RETAILER_CODE", 
+            "METRIC",
             "BIZCATE_CODE",
             "MONTH_YEAR",
         ],
     )
     # fmt: off
     >> mutate(
-        PERCENT_YES_SPEND_DEMO_NO_CORR_KF=_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_KF - _.PERCENT_YES_SPEND_DELTA_NO_CORR_KF,
-        PERCENT_YES_SPEND_DEMO_NO_CORR_RTS=_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_RTS - _.PERCENT_YES_SPEND_DELTA_NO_CORR_RTS,
-        PERCENT_YES_SPEND_DEMO_CORR_KF=_.PERCENT_YES_SPEND_NATIONAL_CORR_KF - _.PERCENT_YES_SPEND_DELTA_CORR_KF,
-        PERCENT_YES_SPEND_DEMO_CORR_RTS=_.PERCENT_YES_SPEND_NATIONAL_CORR_RTS - _.PERCENT_YES_SPEND_DELTA_CORR_RTS,
+        SCORE_DEMO_NO_CORR_KF=_.SCORE_NATIONAL_NO_CORR_KF - _.SCORE_DELTA_NO_CORR_KF,
+        SCORE_DEMO_NO_CORR_RTS=_.SCORE_NATIONAL_NO_CORR_RTS - _.SCORE_DELTA_NO_CORR_RTS,
+        SCORE_DEMO_CORR_KF=_.SCORE_NATIONAL_CORR_KF - _.SCORE_DELTA_CORR_KF,
+        SCORE_DEMO_CORR_RTS=_.SCORE_NATIONAL_CORR_RTS - _.SCORE_DELTA_CORR_RTS,
     )
     # fmt:on
     >> select(
-        ~_.PERCENT_YES_SPEND_DELTA,
-        ~_.PERCENT_YES_SPEND_DELTA_NO_CORR_KF,
-        ~_.PERCENT_YES_SPEND_DELTA_NO_CORR_RTS,
-        ~_.PERCENT_YES_SPEND_DELTA_CORR_KF,
-        ~_.PERCENT_YES_SPEND_DELTA_CORR_RTS,
-        ~_.PERCENT_YES_SPEND_NATIONAL,
-        ~_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_KF,
-        ~_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_RTS,
-        ~_.PERCENT_YES_SPEND_NATIONAL_CORR_KF,
-        ~_.PERCENT_YES_SPEND_NATIONAL_CORR_RTS,
+        ~_.SCORE_DELTA,
+        ~_.SCORE_DELTA_NO_CORR_KF,
+        ~_.SCORE_DELTA_NO_CORR_RTS,
+        ~_.SCORE_DELTA_CORR_KF,
+        ~_.SCORE_DELTA_CORR_RTS,
+        ~_.SCORE_NATIONAL,
+        ~_.SCORE_NATIONAL_NO_CORR_KF,
+        ~_.SCORE_NATIONAL_NO_CORR_RTS,
+        ~_.SCORE_NATIONAL_CORR_KF,
+        ~_.SCORE_NATIONAL_CORR_RTS,
     )
 )
 
 # %%
-a003_demo_filtered_renamed = (
-    a003_demo_filtered
-    >> rename(**{col.replace("_DEMO", ""): col for col in a003_demo_filtered.columns})
+a050_demo_filtered_renamed = (
+    a050_demo_filtered
+    >> rename(**{col.replace("_DEMO", ""): col for col in a050_demo_filtered.columns})
     >> mutate(
         across(
             _[_.endswith("_KF"), _.endswith("_RTS")],
@@ -228,35 +234,36 @@ a003_demo_filtered_renamed = (
     )
 )
 
-outputs.append(a003_demo_filtered_renamed)
+outputs.append(a050_demo_filtered_renamed)
 
 # %%
-a003_filtered = pd.concat(outputs, ignore_index=True)
+a050_filtered = pd.concat(outputs, ignore_index=True)
 
 # %% upload
 fdb.upload(
-    df=a003_filtered,
+    df=a050_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="BIZCATE_M003_Q23SPEND",
+    table="BIZCATE_M050_ECOMROC",
     if_exists="replace",
 )
 
 # %% test
-(
-    a003_filtered
-    >> filter(
-        _.CUT_ID == 1,
-        _.OPTION == 2,
-        _.BIZCATE_CODE == 112,
-    )
-).plot(
-    x = "MONTH_YEAR",
-    y = [
-        "PERCENT_YES_SPEND",
-        "PERCENT_YES_SPEND_NO_CORR_RTS",
-        "PERCENT_YES_SPEND_CORR_RTS",
-    ]
-).legend(loc='best')
+# (
+#     a050_filtered
+#     >> filter(
+#         _.CUT_ID == 1,
+#         _.RETAILER_CODE == 17,
+#         _.BIZCATE_CODE == 222,
+#         _.METRIC == "THINK"
+#     )
+# ).plot(
+#     x = "MONTH_YEAR",
+#     y = [
+#         "SCORE",
+#         "SCORE_NO_CORR_RTS",
+#         "SCORE_CORR_RTS",
+#     ]
+# ).legend(loc='best')
 
 # %%

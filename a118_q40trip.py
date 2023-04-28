@@ -18,6 +18,9 @@ def load_q40trip(
 
     a118_q40trip = (
         fdb[database][schema][table](lazy=True)
+        >> rename(
+            BIZCATE_CODE = _.SUB_CODE, 
+        )
         >> filter(
             ~_.CUT_ID.isna(),
             _.CUT_ID.isin([1] + cut_ids) if cut_ids is not None else True,
@@ -25,7 +28,7 @@ def load_q40trip(
         >> left_join(_, month_mapping, on="MONTH_NUM")
         >> select(
             _.CUT_ID,
-            _.SUB_CODE,  # FIXME: ?
+            _.BIZCATE_CODE,  # FIXME: ?
             _.RETAILER_CODE,
             _.OPTION,
             _.MONTH_YEAR,
@@ -39,10 +42,11 @@ def load_q40trip(
     return a118_q40trip
 
 
+# %%
 def dataloader(table):
     return DataLoader(
         table=table,
-        id_cols=["CUT_ID", "OPTION"],
+        id_cols=["CUT_ID", "OPTION", "RETAILER_CODE"],
         date_col="MONTH_YEAR",
         var_cols=["BIZCATE_CODE"],
     )
@@ -53,7 +57,7 @@ def no_corr_kf_module(metric_col):
         metric_col=metric_col,
         output_col_prefix=metric_col + "_NO_CORR",
         sample_size_col="ASK_COUNT",
-        process_std=0.015,
+        process_std=0.020,
     )
 
 
@@ -62,7 +66,7 @@ def corr_kf_module(metric_col):
         metric_col=metric_col,
         output_col_prefix=metric_col + "_CORR",
         sample_size_col="ASK_COUNT",
-        process_std=0.015,
+        process_std=0.020
     )
 
 
@@ -80,35 +84,35 @@ runner = Runner(
 outputs = []
 
 # %%
-a003_q23spend = load_q23spend()
+a118_q40trip = load_q40trip()
 
 # ----------------------------------------------------------------
 # filter national
 # ----------------------------------------------------------------
 
-a003_national = (
-    a003_q23spend
+a118_national = (
+    a118_q40trip
     >> filter(_.CUT_ID == 1)
-    >> rename(PERCENT_YES_SPEND_NATIONAL=_.PERCENT_YES_SPEND)
+    >> rename(PERCENT_YES_NATIONAL=_.PERCENT_YES)
 )
 
-a003_national_dl = dataloader(a003_national)
-a003_national_kf_module_no_corr = no_corr_kf_module("PERCENT_YES_SPEND_NATIONAL")
-a003_national_kf_module_corr = corr_kf_module("PERCENT_YES_SPEND_NATIONAL")
+a118_national_dl = dataloader(a118_national)
+a118_national_kf_module_no_corr = no_corr_kf_module("PERCENT_YES_NATIONAL")
+a118_national_kf_module_corr = corr_kf_module("PERCENT_YES_NATIONAL")
 
-a003_national_filtered = runner.run(
+a118_national_filtered = runner.run(
     models=[
-        a003_national_kf_module_no_corr,
-        a003_national_kf_module_corr,
+        a118_national_kf_module_no_corr,
+        a118_national_kf_module_corr,
     ],
-    dataloaders=a003_national_dl,
+    dataloaders=a118_national_dl,
 )
 
 # %%
-a003_national_filtered_renamed = (
-    a003_national_filtered
+a118_national_filtered_renamed = (
+    a118_national_filtered
     >> rename(
-        **{col.replace("_NATIONAL", ""): col for col in a003_national_filtered.columns}
+        **{col.replace("_NATIONAL", ""): col for col in a118_national_filtered.columns}
     )
     >> mutate(
         across(
@@ -124,87 +128,89 @@ a003_national_filtered_renamed = (
     )
 )
 
-outputs.append(a003_national_filtered_renamed)
+outputs.append(a118_national_filtered_renamed)
 
 # %%
 # ----------------------------------------------------------------
 # filter demo cuts using delta method
 # ----------------------------------------------------------------
 
-a003_demo = (
-    a003_q23spend
+a118_demo = (
+    a118_q40trip
     >> filter(_.CUT_ID != 1)
-    >> rename(PERCENT_YES_SPEND_DEMO=_.PERCENT_YES_SPEND)
+    >> rename(PERCENT_YES_DEMO=_.PERCENT_YES)
 )
 
 # %% calculate demo cuts deltas
-a003_demo_delta = (
+a118_demo_delta = (
     inner_join(
-        a003_national
+        a118_national
         >> select(
             ~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT
         ),  # fmt: skip
-        a003_demo,
+        a118_demo,
         on=[
             "OPTION",
             "BIZCATE_CODE",
+            "RETAILER_CODE",
             "MONTH_YEAR",
         ],
     )
     >> mutate(
-        PERCENT_YES_SPEND_DELTA=_.PERCENT_YES_SPEND_NATIONAL - _.PERCENT_YES_SPEND_DEMO  # fmt: skip
+        PERCENT_YES_DELTA=_.PERCENT_YES_NATIONAL - _.PERCENT_YES_DEMO  # fmt: skip
     )
-    >> select(~_.PERCENT_YES_SPEND_NATIONAL)
+    >> select(~_.PERCENT_YES_NATIONAL)
 )
 
 
 # %% filter demo cuts deltas
-a003_demo_delta_dl = dataloader(a003_demo_delta)
-a003_demo_kf_module_no_corr = no_corr_kf_module("PERCENT_YES_SPEND_DELTA")
-a003_demo_kf_module_corr = corr_kf_module("PERCENT_YES_SPEND_DELTA")
+a118_demo_delta_dl = dataloader(a118_demo_delta)
+a118_demo_kf_module_no_corr = no_corr_kf_module("PERCENT_YES_DELTA")
+a118_demo_kf_module_corr = corr_kf_module("PERCENT_YES_DELTA")
 
-a003_demo_delta_filtered = runner.run(
-    models=[a003_demo_kf_module_no_corr, a003_demo_kf_module_corr],
-    dataloaders=a003_demo_delta_dl,
+a118_demo_delta_filtered = runner.run(
+    models=[a118_demo_kf_module_no_corr, a118_demo_kf_module_corr],
+    dataloaders=a118_demo_delta_dl,
 )
 
 # %% apply national
-a003_demo_filtered = (
+a118_demo_filtered = (
     inner_join(
-        a003_national_filtered >> select(~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT),
-        a003_demo_delta_filtered,
+        a118_national_filtered >> select(~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT),
+        a118_demo_delta_filtered,
         on=[
             "OPTION",
             "BIZCATE_CODE",
+            "RETAILER_CODE",
             "MONTH_YEAR",
         ],
     )
     # fmt: off
     >> mutate(
-        PERCENT_YES_SPEND_DEMO_NO_CORR_KF=_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_KF - _.PERCENT_YES_SPEND_DELTA_NO_CORR_KF,
-        PERCENT_YES_SPEND_DEMO_NO_CORR_RTS=_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_RTS - _.PERCENT_YES_SPEND_DELTA_NO_CORR_RTS,
-        PERCENT_YES_SPEND_DEMO_CORR_KF=_.PERCENT_YES_SPEND_NATIONAL_CORR_KF - _.PERCENT_YES_SPEND_DELTA_CORR_KF,
-        PERCENT_YES_SPEND_DEMO_CORR_RTS=_.PERCENT_YES_SPEND_NATIONAL_CORR_RTS - _.PERCENT_YES_SPEND_DELTA_CORR_RTS,
+        PERCENT_YES_DEMO_NO_CORR_KF=_.PERCENT_YES_NATIONAL_NO_CORR_KF - _.PERCENT_YES_DELTA_NO_CORR_KF,
+        PERCENT_YES_DEMO_NO_CORR_RTS=_.PERCENT_YES_NATIONAL_NO_CORR_RTS - _.PERCENT_YES_DELTA_NO_CORR_RTS,
+        PERCENT_YES_DEMO_CORR_KF=_.PERCENT_YES_NATIONAL_CORR_KF - _.PERCENT_YES_DELTA_CORR_KF,
+        PERCENT_YES_DEMO_CORR_RTS=_.PERCENT_YES_NATIONAL_CORR_RTS - _.PERCENT_YES_DELTA_CORR_RTS,
     )
     # fmt:on
     >> select(
-        ~_.PERCENT_YES_SPEND_DELTA,
-        ~_.PERCENT_YES_SPEND_DELTA_NO_CORR_KF,
-        ~_.PERCENT_YES_SPEND_DELTA_NO_CORR_RTS,
-        ~_.PERCENT_YES_SPEND_DELTA_CORR_KF,
-        ~_.PERCENT_YES_SPEND_DELTA_CORR_RTS,
-        ~_.PERCENT_YES_SPEND_NATIONAL,
-        ~_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_KF,
-        ~_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_RTS,
-        ~_.PERCENT_YES_SPEND_NATIONAL_CORR_KF,
-        ~_.PERCENT_YES_SPEND_NATIONAL_CORR_RTS,
+        ~_.PERCENT_YES_DELTA,
+        ~_.PERCENT_YES_DELTA_NO_CORR_KF,
+        ~_.PERCENT_YES_DELTA_NO_CORR_RTS,
+        ~_.PERCENT_YES_DELTA_CORR_KF,
+        ~_.PERCENT_YES_DELTA_CORR_RTS,
+        ~_.PERCENT_YES_NATIONAL,
+        ~_.PERCENT_YES_NATIONAL_NO_CORR_KF,
+        ~_.PERCENT_YES_NATIONAL_NO_CORR_RTS,
+        ~_.PERCENT_YES_NATIONAL_CORR_KF,
+        ~_.PERCENT_YES_NATIONAL_CORR_RTS,
     )
 )
 
 # %%
-a003_demo_filtered_renamed = (
-    a003_demo_filtered
-    >> rename(**{col.replace("_DEMO", ""): col for col in a003_demo_filtered.columns})
+a118_demo_filtered_renamed = (
+    a118_demo_filtered
+    >> rename(**{col.replace("_DEMO", ""): col for col in a118_demo_filtered.columns})
     >> mutate(
         across(
             _[_.endswith("_KF"), _.endswith("_RTS")],
@@ -219,35 +225,36 @@ a003_demo_filtered_renamed = (
     )
 )
 
-outputs.append(a003_demo_filtered_renamed)
+outputs.append(a118_demo_filtered_renamed)
 
 # %%
-a003_filtered = pd.concat(outputs, ignore_index=True)
+a118_filtered = pd.concat(outputs, ignore_index=True)
 
 # %% upload
 fdb.upload(
-    df=a003_filtered,
+    df=a118_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="BIZCATE_M003_Q23SPEND",
+    table="BIZCATE_M118_Q40TRIP",
     if_exists="replace",
 )
 
 # %% test
-(
-    a003_filtered
-    >> filter(
-        _.CUT_ID == 1,
-        _.OPTION == 2,
-        _.BIZCATE_CODE == 112,
-    )
-).plot(
-    x = "MONTH_YEAR",
-    y = [
-        "PERCENT_YES_SPEND",
-        "PERCENT_YES_SPEND_NO_CORR_RTS",
-        "PERCENT_YES_SPEND_CORR_RTS",
-    ]
-).legend(loc='best')
+# (
+#     a118_filtered
+#     >> filter(
+#         _.CUT_ID == 1,
+#         _.OPTION == 1,
+#         _.RETAILER_CODE == 45,
+#         _.BIZCATE_CODE == 112,
+#     )
+# ).plot(
+#     x = "MONTH_YEAR",
+#     y = [
+#         "PERCENT_YES",
+#         "PERCENT_YES_NO_CORR_RTS",
+#         "PERCENT_YES_CORR_RTS",
+#     ]
+# ).legend(loc='best')
 
 # %%

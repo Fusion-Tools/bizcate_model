@@ -6,6 +6,7 @@ from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
 from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
+from callbacks import Scaler
 
 
 # %%
@@ -57,7 +58,7 @@ def no_corr_kf_module(metric_col):
         metric_col=metric_col,
         output_col_prefix=metric_col + "_NO_CORR",
         sample_size_col="ASK_COUNT",
-        process_std=0.015,
+        process_std=0.020,
     )
 
 
@@ -66,7 +67,7 @@ def corr_kf_module(metric_col):
         metric_col=metric_col,
         output_col_prefix=metric_col + "_CORR",
         sample_size_col="ASK_COUNT",
-        process_std=0.015,
+        process_std=0.020,
     )
 
 
@@ -74,6 +75,7 @@ def corr_kf_module(metric_col):
 # fmt: off
 runner = Runner(
     callbacks=[
+        # Scaler(),
         LogitTransform(),
         PivotLong(),
         ConcactPartitions()
@@ -243,13 +245,15 @@ fdb.upload(
 #     >> filter(
 #         _.CUT_ID == 1,
 #         _.OPTION == 1,
-#         _.BIZCATE_CODE == 102,
+#         _.BIZCATE_CODE == 197,
 #     )
 # ).plot(
 #     x = "MONTH_YEAR",
 #     y = [
 #         "PERCENT_YES_BODIES",
+#         "PERCENT_YES_BODIES_NO_CORR_KF",
 #         "PERCENT_YES_BODIES_NO_CORR_RTS",
+#         "PERCENT_YES_BODIES_CORR_KF",
 #         "PERCENT_YES_BODIES_CORR_RTS",
 #     ]
 # ).legend(loc='best')
