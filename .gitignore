@@ -16,3 +16,4 @@ run_sephora*
 run_simons*
 run_staples_custom*
 output
+*.svg

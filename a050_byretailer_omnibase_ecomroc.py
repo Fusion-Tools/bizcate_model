@@ -155,7 +155,7 @@ a050_demo_delta = (
     inner_join(
         a050_national
         >> select(
-            ~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT
+            ~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT_SPEND
         ),  # fmt: skip
         a050_demo,
         on=[
@@ -185,7 +185,7 @@ a050_demo_delta_filtered = runner.run(
 # %% apply national
 a050_demo_filtered = (
     inner_join(
-        a050_national_filtered >> select(~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT),
+        a050_national_filtered >> select(~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT_SPEND),
         a050_demo_delta_filtered,
         on=[
             "RETAILER_CODE", 
