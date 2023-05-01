@@ -13,7 +13,8 @@ from kf_modules import BizcateCorrelationKFModule
 # fmt: off
 # Define cuts to process (in addition to National)
 CUT_IDS = [
-    2, 3,
+    # 2, 3,
+    10010, 10020, 10030, 10040, 10050, 10060, 10070, 10080, 10090, # Regions
 ]
 # fmt: on
 
@@ -165,18 +166,18 @@ bizcate_sub_mapping = (
 
 # %% collect bm and ecom market share for bizcate
 bm_marketshare_bizcate = fetch_raw_market_share(
-    db="L2SURVEY",
-    schema="BIZCATE_ROLLUP",
-    tbl_name="A043_BYRETAILER_BMBASE_MARKETSHARE",
+    db="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    tbl_name="BIZCATE_NORMALIZED_BYRETAILER_BMBASE_MARKETSHARE",
     retailers=None,
     channel="BM",
     logit_transform=False,
     cut_ids=CUT_IDS,
 )
 ecom_marketshare_bizcate = fetch_raw_market_share(
-    db="L2SURVEY",
-    schema="BIZCATE_ROLLUP",
-    tbl_name="A046_BYRETAILER_ECOMBASE_MARKETSHARE",
+    db="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    tbl_name="BIZCATE_NORMALIZED_BYRETAILER_ECOMBASE_MARKETSHARE",
     retailers=None,
     channel="Ecom",
     logit_transform=False,
@@ -436,12 +437,12 @@ marketshare_bizcate_filtered = (
 )
 
 # %%
-# fdb.upload(
-#     df=marketshare_bizcate_filtered,
-#     database="FUSEDDATA",
-#     schema="DATASCI_LAB",
-#     table="BIZCATE_M043_046_MARKETSHARE",
-# )
+fdb.upload(
+    df=marketshare_bizcate_filtered,
+    database="FUSEDDATA",
+    schema="DATASCI_LAB",
+    table="BIZCATE_NORMALIZED_M043_046_MARKETSHARE",
+)
 
 # %%
 # (

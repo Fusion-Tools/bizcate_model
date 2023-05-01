@@ -10,9 +10,9 @@ from callbacks import Scaler
 
 # %%
 def load_avgspend_ecom(
-    database="L2SURVEY",
-    schema="BIZCATE_ROLLUP",
-    table="A019_AVGSPEND_ECOM",
+    database="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    table="BIZCATE_NORMALIZED_AVGSPEND_ECOM",
     cut_ids=None,
 ):
     a019_avgspend_ecom = (
@@ -236,7 +236,7 @@ fdb.upload(
     df=a019_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="BIZCATE_M019_AVGSPEND_ECOM",
+    table="BIZCATE_NORMALIZED_M019_AVGSPEND_ECOM",
     if_exists="replace",
 )
 

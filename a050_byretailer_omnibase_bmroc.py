@@ -10,9 +10,9 @@ from kf_modules import BizcateCorrelationKFModule
 
 # %%
 def load_bmroc(
-    database="L2SURVEY",
-    schema="BIZCATE_ROLLUP",
-    table="A050_BYRETAILER_OMNIBASE_BMROC",
+    database="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    table="BIZCATE_NORMALIZED_BYRETAILER_OMNIBASE_BMROC",
     cut_ids=None,
 ):
     a050_bmroc = (
@@ -35,11 +35,11 @@ def load_bmroc(
             _.MONTH_YEAR,
             _.ASK_COUNT,
             _.ASK_WEIGHT_SPEND,
-            _.TA == _.PERCENT_SPEND_FINAL_TA_AND_SHARE_ADJUSTED_11,
-            _.THINK == _.PERCENT_SPEND_FINAL_TA_AND_SHARE_ADJUSTED_12,
-            _.CONSIDER == _.PERCENT_SPEND_FINAL_TA_AND_SHARE_ADJUSTED_13,
-            _.VISIT == _.PERCENT_SPEND_FINAL_TA_AND_SHARE_ADJUSTED_14,
-            _.SHARE == _.PERCENT_SPEND_FINAL_TA_AND_SHARE_ADJUSTED_16,
+            _.TA,
+            _.THINK,
+            _.CONSIDER,
+            _.VISIT,
+            _.SHARE,
         )
         >> pivot_longer(
             _["TA", "THINK", "CONSIDER", "VISIT", "SHARE"],
@@ -244,7 +244,7 @@ fdb.upload(
     df=a050_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="BIZCATE_M050_BMROC",
+    table="BIZCATE_NORMALIZED_M050_BMROC",
     if_exists="replace",
 )
 

@@ -11,9 +11,9 @@ from callbacks import Scaler
 
 # %%
 def load_q23bodies(
-    database="L2SURVEY",
-    schema="BIZCATE_ROLLUP",
-    table="A002_Q23BODIES",
+    database="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    table="BIZCATE_NORMALIZED_Q23BODIES",
     cut_ids=None,
 ):
     a002_q23bodies = (
@@ -235,7 +235,7 @@ fdb.upload(
     df=a002_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="BIZCATE_M002_Q23BODIES",
+    table="BIZCATE_NORMALIZED_M002_Q23BODIES",
     if_exists="replace",
 )
 

@@ -13,7 +13,8 @@ from kf_modules import BizcateCorrelationKFModule
 # fmt: off
 # Define cuts to process (in addition to National)
 CUT_IDS = [
-    2, 3,
+    # 2, 3,
+    10010, 10020, 10030, 10040, 10050, 10060, 10070, 10080, 10090, # Regions
 ]
 # fmt: on
 
@@ -204,18 +205,18 @@ bizcate_sub_mapping = (
 
 # %% Collect bm and ecom think for bizcate
 bm_think_bizcate = fetch_raw_think_tom(
-    db="L2SURVEY",
-    schema="BIZCATE_ROLLUP",
-    tbl_name="A036_BYRETAILER_BMAWARENESS",
+    db="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    tbl_name="BIZCATE_NORMALIZED_BYRETAILER_BMAWARENESS",
     retailers=None,
     channel="BM",
     logit_transform=False,
     cut_ids=CUT_IDS,
 )
 ecom_think_bizcate = fetch_raw_think_tom(
-    db="L2SURVEY",
-    schema="BIZCATE_ROLLUP",
-    tbl_name="A037_BYRETAILER_ECOMAWARENESS",
+    db="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    tbl_name="BIZCATE_NORMALIZED_BYRETAILER_ECOMAWARENESS",
     retailers=None,
     channel="Ecom",
     logit_transform=False,
@@ -235,25 +236,8 @@ def fetch_filtered_think_tom(
     schema="LEVER_BRAND",
     tbl_name="COMPSHARE_011_FILTERED_SURVEY_THINK",
 ):
-    f004_geo_reported = (
-        fdb.LOOKUP.ZZINFO.F004_GEO_REPORTED(lazy=True)
-        >> filter(_.REPORTED_REGION_CODE.isin([113, 116]))
-        >> select(_.FUSION_REGION_CODE, _.REPORTED_REGION_CODE)
-    )
 
-    audited_001_industry = (
-        fdb.L2METRICS.DASH_ZZ_COMMON.AUDITED_001_INDUSTRYSIZE(lazy=True)
-        >> filter(_.CUSTOMER_TYPE == "Consumer Retail", _.CHANNEL.isin(["BM", "Ecom"]))
-        >> distinct(
-            _.CHANNEL,
-            _.FUSION_REGION_CODE,
-            _.SUB_CODE,
-            _.MONTH_YEAR,
-            _.INDUSTRY_SIZE,
-        )
-    )
-
-    think_national = (
+    think_filtered = (
         fdb[db][schema][tbl_name](lazy=True)
         >> select(
             _.FUSION_REGION_CODE,
@@ -264,77 +248,28 @@ def fetch_filtered_think_tom(
             _.TOM_SMOOTHED,
             _.TOTALTHINK_SMOOTHED,
         )
-        >> filter(_.FUSION_REGION_CODE == 0)
-        >> mutate(CUT_ID=case_when(_, {_.FUSION_REGION_CODE == 0: 1, True: 0}))
+        >> mutate(
+            CUT_ID=case_when(
+                _, 
+                {
+                    _.FUSION_REGION_CODE == 0: 1,
+                    _.FUSION_REGION_CODE == 1: 10010,
+                    _.FUSION_REGION_CODE == 2: 10020,
+                    _.FUSION_REGION_CODE == 3: 10030,
+                    _.FUSION_REGION_CODE == 4: 10040,
+                    _.FUSION_REGION_CODE == 5: 10050,
+                    _.FUSION_REGION_CODE == 6: 10060,
+                    _.FUSION_REGION_CODE == 7: 10070,
+                    _.FUSION_REGION_CODE == 8: 10080,
+                    _.FUSION_REGION_CODE == 9: 10090,
+                    True: 0
+                }
+            )
+        )
         >> select(~_.FUSION_REGION_CODE)
         >> collect()
         >> mutate(MONTH_YEAR=_.MONTH_YEAR.dt.date)
     )
-
-    think_regions = (
-        fdb[db][schema][tbl_name](lazy=True)
-        >> select(
-            _.FUSION_REGION_CODE,
-            _.CHANNEL,
-            _.RETAILER_CODE,
-            _.SUB_CODE,
-            _.MONTH_YEAR,
-            _.TOM_SMOOTHED,
-            _.TOTALTHINK_SMOOTHED,
-        )
-        >> inner_join(
-            _,
-            audited_001_industry,
-            on=["CHANNEL", "FUSION_REGION_CODE", "SUB_CODE", "MONTH_YEAR"],
-        )
-        >> inner_join(
-            _,
-            f004_geo_reported,
-            on=["FUSION_REGION_CODE"],
-        )
-        >> mutate(
-            WEIGHTED_TOM_SMOOTHED=_.TOM_SMOOTHED * _.INDUSTRY_SIZE,
-            WEIGHTED_TOTALTHINK_SMOOTHED=_.TOTALTHINK_SMOOTHED * _.INDUSTRY_SIZE,
-        )
-        >> group_by(
-            _.REPORTED_REGION_CODE,
-            _.CHANNEL,
-            _.RETAILER_CODE,
-            _.SUB_CODE,
-            _.MONTH_YEAR,
-        )
-        >> summarize(
-            SUM_WEIGHTED_TOM_SMOOTHED=_.WEIGHTED_TOM_SMOOTHED.sum(),
-            SUM_WEIGHTED_TOTALTHINK_SMOOTHED=_.WEIGHTED_TOTALTHINK_SMOOTHED.sum(),
-            SUM_INDUSTRY_SIZE=_.INDUSTRY_SIZE.sum(),
-        )
-        >> ungroup()
-        >> mutate(
-            TOM_SMOOTHED=_.SUM_WEIGHTED_TOM_SMOOTHED / _.SUM_INDUSTRY_SIZE,
-            TOTALTHINK_SMOOTHED=_.SUM_WEIGHTED_TOTALTHINK_SMOOTHED
-            / _.SUM_INDUSTRY_SIZE,
-        )
-        >> mutate(
-            CUT_ID=case_when(
-                _,
-                {
-                    _.REPORTED_REGION_CODE == 116: 2,
-                    _.REPORTED_REGION_CODE == 113: 3,
-                    True: 0,
-                },
-            )
-        )
-        >> select(
-            ~_.SUM_WEIGHTED_TOM_SMOOTHED,
-            ~_.SUM_WEIGHTED_TOTALTHINK_SMOOTHED,
-            ~_.SUM_INDUSTRY_SIZE,
-            ~_.REPORTED_REGION_CODE,
-        )
-        >> collect()
-        >> mutate(MONTH_YEAR=_.MONTH_YEAR.dt.date)
-    )
-
-    think_filtered = pd.concat([think_national, think_regions])
 
     return think_filtered
 
@@ -398,7 +333,6 @@ think_maspl_national = (
 )
 think_bizcate_national = think_bizcate >> filter(_.CUT_ID == 1)
 
-# %%
 # %% calculate national deltas to maspl
 think_bizcate_national_delta = (
     inner_join(
@@ -434,6 +368,7 @@ think_bizcate_national_delta_filtered = runner.run(
         think_kf_module_corr,
     ],
     dataloaders=think_bizcate_national_delta_dl,
+    parallel=False
 )
 
 # %% apply filtered maspl

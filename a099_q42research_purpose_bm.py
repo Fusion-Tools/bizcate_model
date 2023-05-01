@@ -9,9 +9,9 @@ from kf_modules import BizcateCorrelationKFModule
 
 # %%
 def load_q42research_purpose_bm(
-    database="L2SURVEY",
-    schema="BIZCATE_ROLLUP",
-    table="A099_Q42RESEARCH_PURPOSE_BM",
+    database="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    table="BIZCATE_NORMALIZED_Q42RESEARCH_PURPOSE_BM",
     cut_ids=None,
 ):
     """Q42a - Online Research purpose - brick"""
@@ -232,25 +232,25 @@ fdb.upload(
     df=a099_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="BIZCATE_M099_Q42RESEARCH_PURPOSE_BM",
+    table="BIZCATE_NORMALIZED_M099_Q42RESEARCH_PURPOSE_BM",
     if_exists="replace",
 )
 
 # %% test
-(
-    a099_filtered
-    >> filter(
-        _.CUT_ID == 1,
-        _.OPTION == 2,
-        _.BIZCATE_CODE == 112,
-    )
-).plot(
-    x = "MONTH_YEAR",
-    y = [
-        "PERCENT_YES",
-        "PERCENT_YES_NO_CORR_RTS",
-        "PERCENT_YES_CORR_RTS",
-    ]
-).legend(loc='best')
+# (
+#     a099_filtered
+#     >> filter(
+#         _.CUT_ID == 1,
+#         _.OPTION == 2,
+#         _.BIZCATE_CODE == 112,
+#     )
+# ).plot(
+#     x = "MONTH_YEAR",
+#     y = [
+#         "PERCENT_YES",
+#         "PERCENT_YES_NO_CORR_RTS",
+#         "PERCENT_YES_CORR_RTS",
+#     ]
+# ).legend(loc='best')
 
 # %%

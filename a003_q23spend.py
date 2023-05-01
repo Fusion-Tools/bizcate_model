@@ -10,9 +10,9 @@ from kf_modules import BizcateCorrelationKFModule
 
 # %%
 def load_q23spend(
-    database="L2SURVEY",
-    schema="BIZCATE_ROLLUP",
-    table="A003_Q23SPEND",
+    database="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    table="BIZCATE_NORMALIZED_Q23SPEND",
     cut_ids=None,
 ):
     a003_q23spend = (
@@ -236,25 +236,25 @@ fdb.upload(
     df=a003_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="BIZCATE_M003_Q23SPEND",
+    table="BIZCATE_NORMALIZED_M003_Q23SPEND",
     if_exists="replace",
 )
 
 # %% test
-# (
-#     a003_filtered
-#     >> filter(
-#         _.CUT_ID == 1,
-#         _.OPTION == 2,
-#         _.BIZCATE_CODE == 112,
-#     )
-# ).plot(
-#     x = "MONTH_YEAR",
-#     y = [
-#         "PERCENT_YES_SPEND",
-#         "PERCENT_YES_SPEND_NO_CORR_RTS",
-#         "PERCENT_YES_SPEND_CORR_RTS",
-#     ]
-# ).legend(loc='best')
+(
+    a003_filtered
+    >> filter(
+        _.CUT_ID == 1,
+        _.OPTION == 2,
+        _.BIZCATE_CODE == 112,
+    )
+).plot(
+    x = "MONTH_YEAR",
+    y = [
+        "PERCENT_YES_SPEND",
+        "PERCENT_YES_SPEND_NO_CORR_RTS",
+        "PERCENT_YES_SPEND_CORR_RTS",
+    ]
+).legend(loc='best')
 
 # %%

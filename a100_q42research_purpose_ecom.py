@@ -9,9 +9,9 @@ from kf_modules import BizcateCorrelationKFModule
 
 # %%
 def load_q42research_purpose_ecom(
-    database="L2SURVEY",
-    schema="BIZCATE_ROLLUP",
-    table="A100_Q42RESEARCH_PURPOSE_ECOM",
+    database="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    table="BIZCATE_NORMALIZED_Q42RESEARCH_PURPOSE_ECOM",
     cut_ids=None,
 ):
     """Q42a - Online Research purpose - ecom"""
@@ -232,7 +232,7 @@ fdb.upload(
     df=a100_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="BIZCATE_M100_Q42RESEARCH_PURPOSE_ECOM",
+    table="BIZCATE_NORMALIZED_M100_Q42RESEARCH_PURPOSE_ECOM",
     if_exists="replace",
 )
 
@@ -242,7 +242,7 @@ fdb.upload(
 #     >> filter(
 #         _.CUT_ID == 1,
 #         _.OPTION == 2,
-#         _.BIZCATE_CODE == 112,
+#         _.BIZCATE_CODE == 101,
 #     )
 # ).plot(
 #     x = "MONTH_YEAR",

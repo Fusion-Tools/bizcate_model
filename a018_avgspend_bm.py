@@ -11,9 +11,9 @@ from callbacks import Scaler
 
 # %%
 def load_avgspend_bm(
-    database="L2SURVEY",
-    schema="BIZCATE_ROLLUP",
-    table="A018_AVGSPEND_BM",
+    database="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    table="BIZCATE_NORMALIZED_AVGSPEND_BM",
     cut_ids=None,
 ):
     a018_avgspend_bm = (
@@ -237,26 +237,26 @@ fdb.upload(
     df=a018_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="BIZCATE_M018_AVGSPEND_BM",
+    table="BIZCATE_NORMALIZED_M018_AVGSPEND_BM",
     if_exists="replace",
 )
 
 # %% test
-# (
-#     a018_filtered
-#     >> filter(
-#         _.CUT_ID == 1,
-#         _.BIZCATE_CODE == 417,
-#     )
-# ).plot(
-#     x="MONTH_YEAR",
-#     y=[
-#         "AVG_SPEND",
-#         "AVG_SPEND_NO_CORR_KF",
-#         "AVG_SPEND_NO_CORR_RTS",
-#         "AVG_SPEND_CORR_RTS",
-#     ],
-# ).legend(loc="best")
+(
+    a018_filtered
+    >> filter(
+        _.CUT_ID == 1,
+        _.BIZCATE_CODE == 417,
+    )
+).plot(
+    x="MONTH_YEAR",
+    y=[
+        "AVG_SPEND",
+        "AVG_SPEND_NO_CORR_KF",
+        "AVG_SPEND_NO_CORR_RTS",
+        "AVG_SPEND_CORR_RTS",
+    ],
+).legend(loc="best")
 
 # %%
 # code 424
