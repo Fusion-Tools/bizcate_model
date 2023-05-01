@@ -7,6 +7,8 @@ from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
 from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
+from utils import logit, inv_logit
+
 
 # %% Define input parameters
 
@@ -18,7 +20,6 @@ CUT_IDS = [
 # fmt: on
 
 # %% Define prerequisite functions
-
 
 def complete_table(
     df, identifying_cols, date_col, val_cols, fill_val=None, fill_val_cols=None
@@ -178,7 +179,7 @@ bm_think_maspl = fetch_raw_think_tom(
     tbl_name="A036_BYRETAILER_BMAWARENESS",
     retailers=None,
     channel="BM",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 ecom_think_maspl = fetch_raw_think_tom(
@@ -187,13 +188,13 @@ ecom_think_maspl = fetch_raw_think_tom(
     tbl_name="A037_BYRETAILER_ECOMAWARENESS",
     retailers=None,
     channel="Ecom",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 
 think_maspl = pd.concat([bm_think_maspl, ecom_think_maspl])
 
-# %% 
+# %%
 # Define the Bizcate mapping table
 bizcate_sub_mapping = (
     fdb.FUSEDDATA.LEVER_JSTEP.LOOKUP_BIZCATE_SUBCATE_QUOTA(lazy=True)
@@ -209,7 +210,7 @@ bm_think_bizcate = fetch_raw_think_tom(
     tbl_name="A036_BYRETAILER_BMAWARENESS",
     retailers=None,
     channel="BM",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 ecom_think_bizcate = fetch_raw_think_tom(
@@ -218,7 +219,7 @@ ecom_think_bizcate = fetch_raw_think_tom(
     tbl_name="A037_BYRETAILER_ECOMAWARENESS",
     retailers=None,
     channel="Ecom",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 
@@ -234,6 +235,7 @@ def fetch_filtered_think_tom(
     db="FUSEDDATA",
     schema="LEVER_BRAND",
     tbl_name="COMPSHARE_011_FILTERED_SURVEY_THINK",
+    logit_transform=False
 ):
     f004_geo_reported = (
         fdb.LOOKUP.ZZINFO.F004_GEO_REPORTED(lazy=True)
@@ -336,6 +338,12 @@ def fetch_filtered_think_tom(
 
     think_filtered = pd.concat([think_national, think_regions])
 
+    # Convert to logit space if specified in the function call
+    if logit_transform:
+        think_filtered["TOM_SMOOTHED"] = logit(think_filtered["TOM_SMOOTHED"])
+        think_filtered["TOTALTHINK_SMOOTHED"] = logit(think_filtered["TOTALTHINK_SMOOTHED"])
+
+
     return think_filtered
 
 
@@ -344,6 +352,7 @@ think_maspl_filtered = fetch_filtered_think_tom(
     db="FUSEDDATA",
     schema="LEVER_BRAND",
     tbl_name="COMPSHARE_011_FILTERED_SURVEY_THINK",
+    logit_transform=True,
 )
 
 
@@ -383,7 +392,6 @@ def corr_kf_module(metric_col):
 # fmt: off
 runner = Runner(
     callbacks=[
-        LogitTransform(),
         PivotLong(),
         ConcactPartitions()
     ]
@@ -398,7 +406,6 @@ think_maspl_national = (
 )
 think_bizcate_national = think_bizcate >> filter(_.CUT_ID == 1)
 
-# %%
 # %% calculate national deltas to maspl
 think_bizcate_national_delta = (
     inner_join(
@@ -438,7 +445,7 @@ think_bizcate_national_delta_filtered = runner.run(
 
 # %% apply filtered maspl
 think_maspl_national_filtered = (
-    think_maspl_filtered 
+    think_maspl_filtered
     >> filter(_.CUT_ID == 1)
     >> inner_join(_, bizcate_sub_mapping, on="SUB_CODE")
 )
@@ -455,9 +462,7 @@ think_bizcate_national_filtered = (
             "MONTH_YEAR",
         ],
     )
-    >> select(
-        ~_.endswith("KF")
-    )
+    >> select(~_.endswith("KF"))
     # fmt: off
     >> mutate(
         TOM_NO_CORR_RTS=_.TOM_SMOOTHED - _.TOM_DELTA_NO_CORR_RTS,
@@ -480,17 +485,13 @@ think_bizcate_national_filtered = (
 )
 
 # %% calculate regions deltas to bizcate natioanl
-think_bizcate_regional = (
-    think_bizcate 
-    >> filter(_.CUT_ID != 1)
-   
-)
+think_bizcate_regional = think_bizcate >> filter(_.CUT_ID != 1)
 
-# %% 
+# %%
 think_bizcate_regional_delta = (
     inner_join(
-        (   
-            think_bizcate_national 
+        (
+            think_bizcate_national
             >> select(~_.SUB_CODE, ~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT)
             >> rename(TOM_NATIONAL=_.TOM, TOTALTHINK_NATIONAL=_.TOTALTHINK)
         ),
@@ -506,7 +507,7 @@ think_bizcate_regional_delta = (
         TOM_DELTA=_.TOM_NATIONAL - _.TOM,  # fmt: skip
         TOTALTHINK_DELTA=_.TOTALTHINK_NATIONAL - _.TOTALTHINK  # fmt: skip
     )
-    >> select( ~_.TOM_NATIONAL, ~_.TOTALTHINK_NATIONAL)
+    >> select(~_.TOM_NATIONAL, ~_.TOTALTHINK_NATIONAL)
 )
 
 # %% filter demo cuts deltas to national
@@ -527,13 +528,13 @@ think_bizcate_regional_delta_filtered = runner.run(
 think_bizcate_regional_filtered = (
     inner_join(
         (
-            think_bizcate_national_filtered 
+            think_bizcate_national_filtered
             >> select(~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT, ~_.TOM, ~_.TOTALTHINK)
             >> rename(
-                TOM_NO_CORR_RTS_NATIONAL = _.TOM_NO_CORR_RTS,	
-                TOTALTHINK_NO_CORR_RTS_NATIONAL = _.TOTALTHINK_NO_CORR_RTS,	
-                TOM_CORR_RTS_NATIONAL = _.TOM_CORR_RTS,	
-                TOTALTHINK_CORR_RTS_NATIONAL = _.TOTALTHINK_CORR_RTS,
+                TOM_NO_CORR_RTS_NATIONAL=_.TOM_NO_CORR_RTS,
+                TOTALTHINK_NO_CORR_RTS_NATIONAL=_.TOTALTHINK_NO_CORR_RTS,
+                TOM_CORR_RTS_NATIONAL=_.TOM_CORR_RTS,
+                TOTALTHINK_CORR_RTS_NATIONAL=_.TOTALTHINK_CORR_RTS,
             )
         ),
         think_bizcate_regional_delta_filtered,
@@ -544,9 +545,7 @@ think_bizcate_regional_filtered = (
             "MONTH_YEAR",
         ],
     )
-    >> select(
-        ~_.endswith("KF")
-    )
+    >> select(~_.endswith("KF"))
     # fmt: off
     >> mutate(
         TOM_NO_CORR_RTS=_.TOM_NO_CORR_RTS_NATIONAL - _.TOM_DELTA_NO_CORR_RTS,
@@ -565,44 +564,53 @@ think_bizcate_regional_filtered = (
         ~_.TOM_NO_CORR_RTS_NATIONAL,
         ~_.TOTALTHINK_NO_CORR_RTS_NATIONAL,
         ~_.TOM_CORR_RTS_NATIONAL,
-        ~_.TOTALTHINK_CORR_RTS_NATIONAL
+        ~_.TOTALTHINK_CORR_RTS_NATIONAL,
     )
 )
 
 # %%
 think_bizcate_filtered = (
-    pd.concat(
-        [think_bizcate_national_filtered, think_bizcate_regional_filtered]
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx < 0, 0, Fx),
-        ),
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx > 1, 1, Fx),
-        ),
-    )
+    pd.concat([think_bizcate_national_filtered, think_bizcate_regional_filtered])
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx < 0, 0, Fx),
+    #     ),
+    # )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx > 1, 1, Fx),
+    #     ),
+    # )
 )
 
+
 # %%
-# fdb.upload(
-#     df=think_bizcate_filtered,
-#     database="FUSEDDATA",
-#     schema="DATASCI_LAB",
-#     table="BIZCATE_M036_037_AWARENESS"
-# )
+think_bizcate_filtered["TOM"] = inv_logit(think_bizcate_filtered["TOM"])
+think_bizcate_filtered["TOTALTHINK"] = inv_logit(think_bizcate_filtered["TOTALTHINK"])
+think_bizcate_filtered["TOM_NO_CORR_RTS"] = inv_logit(think_bizcate_filtered["TOM_NO_CORR_RTS"])
+think_bizcate_filtered["TOTALTHINK_NO_CORR_RTS"] = inv_logit(think_bizcate_filtered["TOTALTHINK_NO_CORR_RTS"])
+think_bizcate_filtered["TOM_CORR_RTS"] = inv_logit(think_bizcate_filtered["TOM_CORR_RTS"])
+think_bizcate_filtered["TOTALTHINK_CORR_RTS"] = inv_logit(think_bizcate_filtered["TOTALTHINK_CORR_RTS"])
+
+
+# %%
+fdb.upload(
+    df=think_bizcate_filtered,
+    database="FUSEDDATA",
+    schema="DATASCI_LAB",
+    table="BIZCATE_M036_037_AWARENESS",
+    if_exists="replace"
+)
 
 # %%
 # (
 #     think_bizcate_filtered
 #     >> filter(
 #         _.CHANNEL == "BM",
-#         _.CUT_ID == 1,
-#         _.BIZCATE_CODE == 102,
+#         _.CUT_ID == 2,
+#         _.BIZCATE_CODE == 111,
 #         _.RETAILER_CODE == 115,
 #     )
 # ).plot(

@@ -7,6 +7,7 @@ from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
 from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
+from utils import logit, inv_logit
 
 # %% Define input parameters
 
@@ -137,7 +138,7 @@ bm_marketshare_maspl = fetch_raw_market_share(
     tbl_name="A043_BYRETAILER_BMBASE_MARKETSHARE",
     retailers=None,
     channel="BM",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 ecom_marketshare_maspl = fetch_raw_market_share(
@@ -146,7 +147,7 @@ ecom_marketshare_maspl = fetch_raw_market_share(
     tbl_name="A046_BYRETAILER_ECOMBASE_MARKETSHARE",
     retailers=None,
     channel="Ecom",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 
@@ -170,7 +171,7 @@ bm_marketshare_bizcate = fetch_raw_market_share(
     tbl_name="A043_BYRETAILER_BMBASE_MARKETSHARE",
     retailers=None,
     channel="BM",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 ecom_marketshare_bizcate = fetch_raw_market_share(
@@ -179,7 +180,7 @@ ecom_marketshare_bizcate = fetch_raw_market_share(
     tbl_name="A046_BYRETAILER_ECOMBASE_MARKETSHARE",
     retailers=None,
     channel="Ecom",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 
@@ -196,6 +197,7 @@ def fetch_filtered_market_share(
     db="L2METRICS",
     schema="DASH_ZZ_COMMON",
     tbl_name="AUDITED_011_BANNERSHARE",
+    logit_transform=False,
 ):
     marketshare_national = (
         fdb[db][schema][tbl_name](lazy=True)
@@ -214,6 +216,12 @@ def fetch_filtered_market_share(
         >> collect()
     )
 
+    # Convert to logit space if specified in the function call
+    if logit_transform:
+        marketshare_national["MARKET_SHARE_SMOOTHED"] = logit(
+            marketshare_national["MARKET_SHARE_SMOOTHED"]
+        )
+
     return marketshare_national
 
 
@@ -222,6 +230,7 @@ marketshare_maspl_national_filtered = fetch_filtered_market_share(
     db="L2METRICS",
     schema="DASH_ZZ_COMMON",
     tbl_name="AUDITED_011_BANNERSHARE",
+    logit_transform=True,
 )
 
 
@@ -262,7 +271,6 @@ def corr_kf_module(metric_col):
 # fmt: off
 runner = Runner(
     callbacks=[
-        LogitTransform(),
         PivotLong(),
         ConcactPartitions()
     ]
@@ -421,27 +429,40 @@ marketshare_bizcate_filtered = (
     pd.concat(
         [marketshare_bizcate_national_filtered, marketshare_bizcate_regional_filtered]
     )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx < 0, 0, Fx),
-        ),
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx > 1, 1, Fx),
-        ),
-    )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx < 0, 0, Fx),
+    #     ),
+    # )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx > 1, 1, Fx),
+    #     ),
+    # )
 )
 
 # %%
-# fdb.upload(
-#     df=marketshare_bizcate_filtered,
-#     database="FUSEDDATA",
-#     schema="DATASCI_LAB",
-#     table="BIZCATE_M043_046_MARKETSHARE",
-# )
+marketshare_bizcate_filtered["MARKET_SHARE"] = inv_logit(
+    marketshare_bizcate_filtered["MARKET_SHARE"]
+)
+marketshare_bizcate_filtered["MARKET_SHARE_NO_CORR_RTS"] = inv_logit(
+    marketshare_bizcate_filtered["MARKET_SHARE_NO_CORR_RTS"]
+)
+marketshare_bizcate_filtered["MARKET_SHARE_CORR_RTS"] = inv_logit(
+    marketshare_bizcate_filtered["MARKET_SHARE_CORR_RTS"]
+)
+
+
+# %%
+fdb.upload(
+    df=marketshare_bizcate_filtered,
+    database="FUSEDDATA",
+    schema="DATASCI_LAB",
+    table="BIZCATE_M043_046_MARKETSHARE",
+    if_exists="replace",
+)
 
 # %%
 # (
@@ -450,7 +471,7 @@ marketshare_bizcate_filtered = (
 #         _.CHANNEL == "BM",
 #         _.CUT_ID == 1,
 #         _.BIZCATE_CODE == 111,
-#         _.RETAILER_CODE == 45,
+#         _.RETAILER_CODE == 115
 #     )
 # ).plot(
 #     x="MONTH_YEAR",

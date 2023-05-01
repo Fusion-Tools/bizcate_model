@@ -7,6 +7,7 @@ from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
 from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
+from utils import logit, inv_logit
 
 # %%
 def load_ecomroc(
@@ -14,6 +15,7 @@ def load_ecomroc(
     schema="BIZCATE_ROLLUP",
     table="A050_BYRETAILER_OMNIBASE_ECOMROC",
     cut_ids=None,
+    logit_transform=True,
 ):
     a050_ecomroc = (
         fdb[database][schema][table](lazy=True)
@@ -49,6 +51,9 @@ def load_ecomroc(
         >> collect()
     )
 
+    if logit_transform:
+        a050_ecomroc["SCORE"] = logit(a050_ecomroc["SCORE"])
+
     return a050_ecomroc
 
 # %%
@@ -83,7 +88,6 @@ def corr_kf_module(metric_col):
 # fmt: off
 runner = Runner(
     callbacks=[
-        LogitTransform(),
         PivotLong(),
         ConcactPartitions()
     ]
@@ -123,18 +127,19 @@ a050_national_filtered_renamed = (
     >> rename(
         **{col.replace("_NATIONAL", ""): col for col in a050_national_filtered.columns}
     )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx < 0, 0, Fx),
-        ),
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx > 1, 1, Fx),
-        ),
-    )
+    >> select(~_.endswith("_KF"))
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx < 0, 0, Fx),
+    #     ),
+    # )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx > 1, 1, Fx),
+    #     ),
+    # )
 )
 
 outputs.append(a050_national_filtered_renamed)
@@ -194,24 +199,25 @@ a050_demo_filtered = (
             "MONTH_YEAR",
         ],
     )
+    >> select(~_.endswith("_KF"))
     # fmt: off
     >> mutate(
-        SCORE_DEMO_NO_CORR_KF=_.SCORE_NATIONAL_NO_CORR_KF - _.SCORE_DELTA_NO_CORR_KF,
+        # SCORE_DEMO_NO_CORR_KF=_.SCORE_NATIONAL_NO_CORR_KF - _.SCORE_DELTA_NO_CORR_KF,
         SCORE_DEMO_NO_CORR_RTS=_.SCORE_NATIONAL_NO_CORR_RTS - _.SCORE_DELTA_NO_CORR_RTS,
-        SCORE_DEMO_CORR_KF=_.SCORE_NATIONAL_CORR_KF - _.SCORE_DELTA_CORR_KF,
+        # SCORE_DEMO_CORR_KF=_.SCORE_NATIONAL_CORR_KF - _.SCORE_DELTA_CORR_KF,
         SCORE_DEMO_CORR_RTS=_.SCORE_NATIONAL_CORR_RTS - _.SCORE_DELTA_CORR_RTS,
     )
     # fmt:on
     >> select(
         ~_.SCORE_DELTA,
-        ~_.SCORE_DELTA_NO_CORR_KF,
+        # ~_.SCORE_DELTA_NO_CORR_KF,
         ~_.SCORE_DELTA_NO_CORR_RTS,
-        ~_.SCORE_DELTA_CORR_KF,
+        # ~_.SCORE_DELTA_CORR_KF,
         ~_.SCORE_DELTA_CORR_RTS,
         ~_.SCORE_NATIONAL,
-        ~_.SCORE_NATIONAL_NO_CORR_KF,
+        # ~_.SCORE_NATIONAL_NO_CORR_KF,
         ~_.SCORE_NATIONAL_NO_CORR_RTS,
-        ~_.SCORE_NATIONAL_CORR_KF,
+        # ~_.SCORE_NATIONAL_CORR_KF,
         ~_.SCORE_NATIONAL_CORR_RTS,
     )
 )
@@ -220,24 +226,29 @@ a050_demo_filtered = (
 a050_demo_filtered_renamed = (
     a050_demo_filtered
     >> rename(**{col.replace("_DEMO", ""): col for col in a050_demo_filtered.columns})
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx < 0, 0, Fx),
-        ),
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx > 1, 1, Fx),
-        ),
-    )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx < 0, 0, Fx),
+    #     ),
+    # )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx > 1, 1, Fx),
+    #     ),
+    # )
 )
 
 outputs.append(a050_demo_filtered_renamed)
 
 # %%
 a050_filtered = pd.concat(outputs, ignore_index=True)
+
+# %%
+a050_filtered["SCORE"] = inv_logit(a050_filtered["SCORE"])
+a050_filtered["SCORE_NO_CORR_RTS"] = inv_logit(a050_filtered["SCORE_NO_CORR_RTS"])
+a050_filtered["SCORE_CORR_RTS"] = inv_logit(a050_filtered["SCORE_CORR_RTS"])
 
 # %% upload
 fdb.upload(

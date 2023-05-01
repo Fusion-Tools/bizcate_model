@@ -6,6 +6,7 @@ from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
 from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
+from utils import logit, inv_logit
 
 # %%
 def load_q42research_purpose_bm(
@@ -13,6 +14,7 @@ def load_q42research_purpose_bm(
     schema="BIZCATE_ROLLUP",
     table="A099_Q42RESEARCH_PURPOSE_BM",
     cut_ids=None,
+    logit_transform=True,
 ):
     """Q42a - Online Research purpose - brick"""
 
@@ -37,6 +39,10 @@ def load_q42research_purpose_bm(
         )
         >> collect()
     )
+
+    if logit_transform:
+        a099_q42research_purpose_bm["PERCENT_YES"] = logit(a099_q42research_purpose_bm["PERCENT_YES"])
+
 
     return a099_q42research_purpose_bm
 
@@ -73,7 +79,6 @@ def corr_kf_module(metric_col):
 # fmt: off
 runner = Runner(
     callbacks=[
-        LogitTransform(),
         PivotLong(),
         ConcactPartitions()
     ]
@@ -113,18 +118,19 @@ a099_national_filtered_renamed = (
     >> rename(
         **{col.replace("_NATIONAL", ""): col for col in a099_national_filtered.columns}
     )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx < 0, 0, Fx),
-        ),
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx > 1, 1, Fx),
-        ),
-    )
+    >> select(~_.endswith("_KF"))
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx < 0, 0, Fx),
+    #     ),
+    # )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx > 1, 1, Fx),
+    #     ),
+    # )
 )
 
 outputs.append(a099_national_filtered_renamed)
@@ -182,24 +188,25 @@ a099_demo_filtered = (
             "MONTH_YEAR",
         ],
     )
+    >> select(~_.endswith("_KF"))
     # fmt: off
     >> mutate(
-        PERCENT_YES_DEMO_NO_CORR_KF=_.PERCENT_YES_NATIONAL_NO_CORR_KF - _.PERCENT_YES_DELTA_NO_CORR_KF,
+        # PERCENT_YES_DEMO_NO_CORR_KF=_.PERCENT_YES_NATIONAL_NO_CORR_KF - _.PERCENT_YES_DELTA_NO_CORR_KF,
         PERCENT_YES_DEMO_NO_CORR_RTS=_.PERCENT_YES_NATIONAL_NO_CORR_RTS - _.PERCENT_YES_DELTA_NO_CORR_RTS,
-        PERCENT_YES_DEMO_CORR_KF=_.PERCENT_YES_NATIONAL_CORR_KF - _.PERCENT_YES_DELTA_CORR_KF,
+        # PERCENT_YES_DEMO_CORR_KF=_.PERCENT_YES_NATIONAL_CORR_KF - _.PERCENT_YES_DELTA_CORR_KF,
         PERCENT_YES_DEMO_CORR_RTS=_.PERCENT_YES_NATIONAL_CORR_RTS - _.PERCENT_YES_DELTA_CORR_RTS,
     )
     # fmt:on
     >> select(
         ~_.PERCENT_YES_DELTA,
-        ~_.PERCENT_YES_DELTA_NO_CORR_KF,
+        # ~_.PERCENT_YES_DELTA_NO_CORR_KF,
         ~_.PERCENT_YES_DELTA_NO_CORR_RTS,
-        ~_.PERCENT_YES_DELTA_CORR_KF,
+        # ~_.PERCENT_YES_DELTA_CORR_KF,
         ~_.PERCENT_YES_DELTA_CORR_RTS,
         ~_.PERCENT_YES_NATIONAL,
-        ~_.PERCENT_YES_NATIONAL_NO_CORR_KF,
+        # ~_.PERCENT_YES_NATIONAL_NO_CORR_KF,
         ~_.PERCENT_YES_NATIONAL_NO_CORR_RTS,
-        ~_.PERCENT_YES_NATIONAL_CORR_KF,
+        # ~_.PERCENT_YES_NATIONAL_CORR_KF,
         ~_.PERCENT_YES_NATIONAL_CORR_RTS,
     )
 )
@@ -208,24 +215,29 @@ a099_demo_filtered = (
 a099_demo_filtered_renamed = (
     a099_demo_filtered
     >> rename(**{col.replace("_DEMO", ""): col for col in a099_demo_filtered.columns})
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx < 0, 0, Fx),
-        ),
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx > 1, 1, Fx),
-        ),
-    )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx < 0, 0, Fx),
+    #     ),
+    # )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx > 1, 1, Fx),
+    #     ),
+    # )
 )
 
 outputs.append(a099_demo_filtered_renamed)
 
 # %%
 a099_filtered = pd.concat(outputs, ignore_index=True)
+
+# %%
+a099_filtered["PERCENT_YES"] = inv_logit(a099_filtered["PERCENT_YES"])
+a099_filtered["PERCENT_YES_NO_CORR_RTS"] = inv_logit(a099_filtered["PERCENT_YES_NO_CORR_RTS"])
+a099_filtered["PERCENT_YES_CORR_RTS"] = inv_logit(a099_filtered["PERCENT_YES_CORR_RTS"])
 
 # %% upload
 fdb.upload(
@@ -237,20 +249,20 @@ fdb.upload(
 )
 
 # %% test
-(
-    a099_filtered
-    >> filter(
-        _.CUT_ID == 1,
-        _.OPTION == 2,
-        _.BIZCATE_CODE == 112,
-    )
-).plot(
-    x = "MONTH_YEAR",
-    y = [
-        "PERCENT_YES",
-        "PERCENT_YES_NO_CORR_RTS",
-        "PERCENT_YES_CORR_RTS",
-    ]
-).legend(loc='best')
+# (
+#     a099_filtered
+#     >> filter(
+#         _.CUT_ID == 1,
+#         _.OPTION == 2,
+#         _.BIZCATE_CODE == 112,
+#     )
+# ).plot(
+#     x = "MONTH_YEAR",
+#     y = [
+#         "PERCENT_YES",
+#         "PERCENT_YES_NO_CORR_RTS",
+#         "PERCENT_YES_CORR_RTS",
+#     ]
+# ).legend(loc='best')
 
 # %%
