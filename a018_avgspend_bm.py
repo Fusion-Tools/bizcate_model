@@ -119,12 +119,12 @@ a018_national_filtered_renamed = (
     >> rename(
         **{col.replace("_NATIONAL", ""): col for col in a018_national_filtered.columns}
     )
-    # >> mutate(
-    #     across(
-    #         _[_.endswith("_KF"), _.endswith("_RTS")],
-    #         if_else(Fx < 0, 0, Fx),
-    #     ),
-    # )
+    >> mutate(
+        across(
+            _[_.endswith("_KF"), _.endswith("_RTS")],
+            if_else(Fx < 0, 0, Fx),
+        ),
+    )
     # >> mutate(
     #     across(
     #         _[_.endswith("_KF"), _.endswith("_RTS")],
@@ -213,12 +213,12 @@ a018_demo_filtered = (
 a018_demo_filtered_renamed = (
     a018_demo_filtered
     >> rename(**{col.replace("_DEMO", ""): col for col in a018_demo_filtered.columns})
-    # >> mutate(
-    #     across(
-    #         _[_.endswith("_KF"), _.endswith("_RTS")],
-    #         if_else(Fx < 0, 0, Fx),
-    #     ),
-    # )
+    >> mutate(
+        across(
+            _[_.endswith("_KF"), _.endswith("_RTS")],
+            if_else(Fx < 0, 0, Fx),
+        ),
+    )
     # >> mutate(
     #     across(
     #         _[_.endswith("_KF"), _.endswith("_RTS")],
