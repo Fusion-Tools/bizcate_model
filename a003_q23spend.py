@@ -6,6 +6,7 @@ from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
 from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
+from utils import logit, inv_logit
 
 
 # %%
@@ -14,6 +15,7 @@ def load_q23spend(
     schema="LEVER_JSTEP",
     table="BIZCATE_NORMALIZED_Q23SPEND",
     cut_ids=None,
+    logit_transform=True,
 ):
     a003_q23spend = (
         fdb[database][schema][table](lazy=True)
@@ -39,6 +41,9 @@ def load_q23spend(
         )
         >> collect()
     )
+
+    if logit_transform:
+        a003_q23spend["PERCENT_YES_SPEND"] = logit(a003_q23spend["PERCENT_YES_SPEND"])
 
     return a003_q23spend
 
@@ -77,7 +82,6 @@ def corr_kf_module(metric_col):
 # fmt: off
 runner = Runner(
     callbacks=[
-        LogitTransform(),
         PivotLong(),
         ConcactPartitions()
     ]
@@ -117,18 +121,19 @@ a003_national_filtered_renamed = (
     >> rename(
         **{col.replace("_NATIONAL", ""): col for col in a003_national_filtered.columns}
     )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx < 0, 0, Fx),
-        ),
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx > 1, 1, Fx),
-        ),
-    )
+    >> select(~_.endswith("_KF"))
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx < 0, 0, Fx),
+    #     ),
+    # )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx > 1, 1, Fx),
+    #     ),
+    # )
 )
 
 outputs.append(a003_national_filtered_renamed)
@@ -186,24 +191,25 @@ a003_demo_filtered = (
             "MONTH_YEAR",
         ],
     )
+    >> select(~_.endswith("_KF"))
     # fmt: off
     >> mutate(
-        PERCENT_YES_SPEND_DEMO_NO_CORR_KF=_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_KF - _.PERCENT_YES_SPEND_DELTA_NO_CORR_KF,
+        # PERCENT_YES_SPEND_DEMO_NO_CORR_KF=_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_KF - _.PERCENT_YES_SPEND_DELTA_NO_CORR_KF,
         PERCENT_YES_SPEND_DEMO_NO_CORR_RTS=_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_RTS - _.PERCENT_YES_SPEND_DELTA_NO_CORR_RTS,
-        PERCENT_YES_SPEND_DEMO_CORR_KF=_.PERCENT_YES_SPEND_NATIONAL_CORR_KF - _.PERCENT_YES_SPEND_DELTA_CORR_KF,
+        # PERCENT_YES_SPEND_DEMO_CORR_KF=_.PERCENT_YES_SPEND_NATIONAL_CORR_KF - _.PERCENT_YES_SPEND_DELTA_CORR_KF,
         PERCENT_YES_SPEND_DEMO_CORR_RTS=_.PERCENT_YES_SPEND_NATIONAL_CORR_RTS - _.PERCENT_YES_SPEND_DELTA_CORR_RTS,
     )
     # fmt:on
     >> select(
         ~_.PERCENT_YES_SPEND_DELTA,
-        ~_.PERCENT_YES_SPEND_DELTA_NO_CORR_KF,
+        # ~_.PERCENT_YES_SPEND_DELTA_NO_CORR_KF,
         ~_.PERCENT_YES_SPEND_DELTA_NO_CORR_RTS,
-        ~_.PERCENT_YES_SPEND_DELTA_CORR_KF,
+        # ~_.PERCENT_YES_SPEND_DELTA_CORR_KF,
         ~_.PERCENT_YES_SPEND_DELTA_CORR_RTS,
         ~_.PERCENT_YES_SPEND_NATIONAL,
-        ~_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_KF,
+        # ~_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_KF,
         ~_.PERCENT_YES_SPEND_NATIONAL_NO_CORR_RTS,
-        ~_.PERCENT_YES_SPEND_NATIONAL_CORR_KF,
+        # ~_.PERCENT_YES_SPEND_NATIONAL_CORR_KF,
         ~_.PERCENT_YES_SPEND_NATIONAL_CORR_RTS,
     )
 )
@@ -212,24 +218,29 @@ a003_demo_filtered = (
 a003_demo_filtered_renamed = (
     a003_demo_filtered
     >> rename(**{col.replace("_DEMO", ""): col for col in a003_demo_filtered.columns})
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx < 0, 0, Fx),
-        ),
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx > 1, 1, Fx),
-        ),
-    )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx < 0, 0, Fx),
+    #     ),
+    # )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx > 1, 1, Fx),
+    #     ),
+    # )
 )
 
 outputs.append(a003_demo_filtered_renamed)
 
 # %%
 a003_filtered = pd.concat(outputs, ignore_index=True)
+
+# %%
+a003_filtered["PERCENT_YES_SPEND"] = inv_logit(a003_filtered["PERCENT_YES_SPEND"])
+a003_filtered["PERCENT_YES_SPEND_NO_CORR_RTS"] = inv_logit(a003_filtered["PERCENT_YES_SPEND_NO_CORR_RTS"])
+a003_filtered["PERCENT_YES_SPEND_CORR_RTS"] = inv_logit(a003_filtered["PERCENT_YES_SPEND_CORR_RTS"])
 
 # %% upload
 fdb.upload(
@@ -241,20 +252,20 @@ fdb.upload(
 )
 
 # %% test
-(
-    a003_filtered
-    >> filter(
-        _.CUT_ID == 1,
-        _.OPTION == 2,
-        _.BIZCATE_CODE == 112,
-    )
-).plot(
-    x = "MONTH_YEAR",
-    y = [
-        "PERCENT_YES_SPEND",
-        "PERCENT_YES_SPEND_NO_CORR_RTS",
-        "PERCENT_YES_SPEND_CORR_RTS",
-    ]
-).legend(loc='best')
+# (
+#     a003_filtered
+#     >> filter(
+#         _.CUT_ID == 1,
+#         _.OPTION == 2,
+#         _.BIZCATE_CODE == 112,
+#     )
+# ).plot(
+#     x = "MONTH_YEAR",
+#     y = [
+#         "PERCENT_YES_SPEND",
+#         "PERCENT_YES_SPEND_NO_CORR_RTS",
+#         "PERCENT_YES_SPEND_CORR_RTS",
+#     ]
+# ).legend(loc='best')
 
 # %%

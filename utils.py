@@ -80,3 +80,19 @@ def first_day_of_previous_month():
     today = date.today()
     last_month_start = today.replace(day=1) - relativedelta(months=1)
     return last_month_start
+
+def logit(x, min=0.00000001, max=0.99999999):
+    """Convert to logit space"""
+
+    p = np.array(x)
+    p[p < min] = min
+    p[p > max] = max
+    return np.log(p / (1 - p))
+
+
+def inv_logit(x):
+    """Convert from logit space"""
+
+    p = np.exp(x) / (1 + np.exp(x))
+    p[np.isnan(p) & ~np.isnan(x)] = 1
+    return p

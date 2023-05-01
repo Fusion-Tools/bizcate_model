@@ -7,6 +7,7 @@ from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
 from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
+from utils import logit, inv_logit
 
 # %% Define input parameters
 
@@ -78,6 +79,7 @@ def fetch_raw_think_tom(
     think_counts = (
         fdb[db][schema][tbl_name](lazy=True)
         >> filter(
+            _.ASK_COUNT.notna(),
             _.TOTALTHINK.notna(),
             _.CUT_ID.isin([1] + cut_ids) if cut_ids is not None else True,
             _.RETAILER_CODE.isin(retailers) if retailers is not None else True,
@@ -92,6 +94,7 @@ def fetch_raw_think_tom(
     think = (
         fdb[db][schema][tbl_name](lazy=True)
         >> filter(
+            _.ASK_COUNT.notna(),
             _.TOTALTHINK.notna(),
             _.CUT_ID.isin([1] + cut_ids) if cut_ids is not None else True,
             _.RETAILER_CODE.isin(retailers) if retailers is not None else True,
@@ -179,7 +182,7 @@ bm_think_maspl = fetch_raw_think_tom(
     tbl_name="A036_BYRETAILER_BMAWARENESS",
     retailers=None,
     channel="BM",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 ecom_think_maspl = fetch_raw_think_tom(
@@ -188,7 +191,7 @@ ecom_think_maspl = fetch_raw_think_tom(
     tbl_name="A037_BYRETAILER_ECOMAWARENESS",
     retailers=None,
     channel="Ecom",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 
@@ -210,7 +213,7 @@ bm_think_bizcate = fetch_raw_think_tom(
     tbl_name="BIZCATE_NORMALIZED_BYRETAILER_BMAWARENESS",
     retailers=None,
     channel="BM",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 ecom_think_bizcate = fetch_raw_think_tom(
@@ -219,7 +222,7 @@ ecom_think_bizcate = fetch_raw_think_tom(
     tbl_name="BIZCATE_NORMALIZED_BYRETAILER_ECOMAWARENESS",
     retailers=None,
     channel="Ecom",
-    logit_transform=False,
+    logit_transform=True,
     cut_ids=CUT_IDS,
 )
 
@@ -235,6 +238,7 @@ def fetch_filtered_think_tom(
     db="FUSEDDATA",
     schema="LEVER_BRAND",
     tbl_name="COMPSHARE_011_FILTERED_SURVEY_THINK",
+    logit_transform=False,
 ):
 
     think_filtered = (
@@ -271,6 +275,11 @@ def fetch_filtered_think_tom(
         >> mutate(MONTH_YEAR=_.MONTH_YEAR.dt.date)
     )
 
+    # Convert to logit space if specified in the function call
+    if logit_transform:
+        think_filtered["TOM_SMOOTHED"] = logit(think_filtered["TOM_SMOOTHED"])
+        think_filtered["TOTALTHINK_SMOOTHED"] = logit(think_filtered["TOTALTHINK_SMOOTHED"])
+
     return think_filtered
 
 
@@ -279,6 +288,7 @@ think_maspl_filtered = fetch_filtered_think_tom(
     db="FUSEDDATA",
     schema="LEVER_BRAND",
     tbl_name="COMPSHARE_011_FILTERED_SURVEY_THINK",
+    logit_transform=True,
 )
 
 
@@ -318,7 +328,6 @@ def corr_kf_module(metric_col):
 # fmt: off
 runner = Runner(
     callbacks=[
-        LogitTransform(),
         PivotLong(),
         ConcactPartitions()
     ]
@@ -509,43 +518,51 @@ think_bizcate_filtered = (
     pd.concat(
         [think_bizcate_national_filtered, think_bizcate_regional_filtered]
     )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx < 0, 0, Fx),
-        ),
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx > 1, 1, Fx),
-        ),
-    )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx < 0, 0, Fx),
+    #     ),
+    # )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx > 1, 1, Fx),
+    #     ),
+    # )
 )
 
 # %%
-# fdb.upload(
-#     df=think_bizcate_filtered,
-#     database="FUSEDDATA",
-#     schema="DATASCI_LAB",
-#     table="BIZCATE_M036_037_AWARENESS"
-# )
+think_bizcate_filtered["TOM"] = inv_logit(think_bizcate_filtered["TOM"])
+think_bizcate_filtered["TOTALTHINK"] = inv_logit(think_bizcate_filtered["TOTALTHINK"])
+think_bizcate_filtered["TOM_NO_CORR_RTS"] = inv_logit(think_bizcate_filtered["TOM_NO_CORR_RTS"])
+think_bizcate_filtered["TOTALTHINK_NO_CORR_RTS"] = inv_logit(think_bizcate_filtered["TOTALTHINK_NO_CORR_RTS"])
+think_bizcate_filtered["TOM_CORR_RTS"] = inv_logit(think_bizcate_filtered["TOM_CORR_RTS"])
+think_bizcate_filtered["TOTALTHINK_CORR_RTS"] = inv_logit(think_bizcate_filtered["TOTALTHINK_CORR_RTS"])
 
 # %%
-# (
-#     think_bizcate_filtered
-#     >> filter(
-#         _.CHANNEL == "BM",
-#         _.CUT_ID == 1,
-#         _.BIZCATE_CODE == 102,
-#         _.RETAILER_CODE == 115,
-#     )
-# ).plot(
-#     x = "MONTH_YEAR",
-#     y = [
-#         "TOM",
-#         "TOM_NO_CORR_RTS",
-#         "TOM_CORR_RTS",
-#     ]
-# ).legend(loc='best')
+fdb.upload(
+    df=think_bizcate_filtered,
+    database="FUSEDDATA",
+    schema="DATASCI_LAB",
+    table="BIZCATE_NORMALIZED_M036_037_AWARENESS"
+)
+
+# %%
+(
+    think_bizcate_filtered
+    >> filter(
+        _.CHANNEL == "BM",
+        _.CUT_ID == 1,
+        _.BIZCATE_CODE == 112,
+        _.RETAILER_CODE == 115,
+    )
+).plot(
+    x = "MONTH_YEAR",
+    y = [
+        "TOM",
+        "TOM_NO_CORR_RTS",
+        "TOM_CORR_RTS",
+    ]
+).legend(loc='best')
 # %%

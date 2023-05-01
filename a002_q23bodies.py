@@ -7,7 +7,7 @@ from fusion_kf.kf_modules import NoCorrelationKFModule
 from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
 from callbacks import Scaler
-
+from utils import logit, inv_logit
 
 # %%
 def load_q23bodies(
@@ -15,6 +15,7 @@ def load_q23bodies(
     schema="LEVER_JSTEP",
     table="BIZCATE_NORMALIZED_Q23BODIES",
     cut_ids=None,
+    logit_transform=True,
 ):
     a002_q23bodies = (
         fdb[database][schema][table](lazy=True)
@@ -40,6 +41,9 @@ def load_q23bodies(
         )
         >> collect()
     )
+
+    if logit_transform:
+        a002_q23bodies["PERCENT_YES_BODIES"] = logit(a002_q23bodies["PERCENT_YES_BODIES"])
 
     return a002_q23bodies
 
@@ -75,8 +79,6 @@ def corr_kf_module(metric_col):
 # fmt: off
 runner = Runner(
     callbacks=[
-        # Scaler(),
-        LogitTransform(),
         PivotLong(),
         ConcactPartitions()
     ]
@@ -116,18 +118,19 @@ a002_national_filtered_renamed = (
     >> rename(
         **{col.replace("_NATIONAL", ""): col for col in a002_national_filtered.columns}
     )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx < 0, 0, Fx),
-        ),
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx > 1, 1, Fx),
-        ),
-    )
+    >> select(~_.endswith("_KF"))
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx < 0, 0, Fx),
+    #     ),
+    # )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx > 1, 1, Fx),
+    #     ),
+    # )
 )
 
 outputs.append(a002_national_filtered_renamed)
@@ -185,24 +188,25 @@ a002_demo_filtered = (
             "MONTH_YEAR",
         ],
     )
+    >> select(~_.endswith("_KF"))
     # fmt: off
     >> mutate(
-        PERCENT_YES_BODIES_DEMO_NO_CORR_KF=_.PERCENT_YES_BODIES_NATIONAL_NO_CORR_KF - _.PERCENT_YES_BODIES_DELTA_NO_CORR_KF,
+        # PERCENT_YES_BODIES_DEMO_NO_CORR_KF=_.PERCENT_YES_BODIES_NATIONAL_NO_CORR_KF - _.PERCENT_YES_BODIES_DELTA_NO_CORR_KF,
         PERCENT_YES_BODIES_DEMO_NO_CORR_RTS=_.PERCENT_YES_BODIES_NATIONAL_NO_CORR_RTS - _.PERCENT_YES_BODIES_DELTA_NO_CORR_RTS,
-        PERCENT_YES_BODIES_DEMO_CORR_KF=_.PERCENT_YES_BODIES_NATIONAL_CORR_KF - _.PERCENT_YES_BODIES_DELTA_CORR_KF,
+        # PERCENT_YES_BODIES_DEMO_CORR_KF=_.PERCENT_YES_BODIES_NATIONAL_CORR_KF - _.PERCENT_YES_BODIES_DELTA_CORR_KF,
         PERCENT_YES_BODIES_DEMO_CORR_RTS=_.PERCENT_YES_BODIES_NATIONAL_CORR_RTS - _.PERCENT_YES_BODIES_DELTA_CORR_RTS,
     )
     # fmt:on
     >> select(
         ~_.PERCENT_YES_BODIES_DELTA,
-        ~_.PERCENT_YES_BODIES_DELTA_NO_CORR_KF,
+        # ~_.PERCENT_YES_BODIES_DELTA_NO_CORR_KF,
         ~_.PERCENT_YES_BODIES_DELTA_NO_CORR_RTS,
-        ~_.PERCENT_YES_BODIES_DELTA_CORR_KF,
+        # ~_.PERCENT_YES_BODIES_DELTA_CORR_KF,
         ~_.PERCENT_YES_BODIES_DELTA_CORR_RTS,
         ~_.PERCENT_YES_BODIES_NATIONAL,
-        ~_.PERCENT_YES_BODIES_NATIONAL_NO_CORR_KF,
+        # ~_.PERCENT_YES_BODIES_NATIONAL_NO_CORR_KF,
         ~_.PERCENT_YES_BODIES_NATIONAL_NO_CORR_RTS,
-        ~_.PERCENT_YES_BODIES_NATIONAL_CORR_KF,
+        # ~_.PERCENT_YES_BODIES_NATIONAL_CORR_KF,
         ~_.PERCENT_YES_BODIES_NATIONAL_CORR_RTS,
     )
 )
@@ -211,24 +215,29 @@ a002_demo_filtered = (
 a002_demo_filtered_renamed = (
     a002_demo_filtered
     >> rename(**{col.replace("_DEMO", ""): col for col in a002_demo_filtered.columns})
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx < 0, 0, Fx),
-        ),
-    )
-    >> mutate(
-        across(
-            _[_.endswith("_KF"), _.endswith("_RTS")],
-            if_else(Fx > 1, 1, Fx),
-        ),
-    )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx < 0, 0, Fx),
+    #     ),
+    # )
+    # >> mutate(
+    #     across(
+    #         _[_.endswith("_KF"), _.endswith("_RTS")],
+    #         if_else(Fx > 1, 1, Fx),
+    #     ),
+    # )
 )
 
 outputs.append(a002_demo_filtered_renamed)
 
 # %%
 a002_filtered = pd.concat(outputs, ignore_index=True)
+
+# %%
+a002_filtered["PERCENT_YES_BODIES"] = inv_logit(a002_filtered["PERCENT_YES_BODIES"])
+a002_filtered["PERCENT_YES_BODIES_NO_CORR_RTS"] = inv_logit(a002_filtered["PERCENT_YES_BODIES_NO_CORR_RTS"])
+a002_filtered["PERCENT_YES_BODIES_CORR_RTS"] = inv_logit(a002_filtered["PERCENT_YES_BODIES_CORR_RTS"])
 
 # %% upload
 fdb.upload(
@@ -251,9 +260,9 @@ fdb.upload(
 #     x = "MONTH_YEAR",
 #     y = [
 #         "PERCENT_YES_BODIES",
-#         "PERCENT_YES_BODIES_NO_CORR_KF",
+#         # "PERCENT_YES_BODIES_NO_CORR_KF",
 #         "PERCENT_YES_BODIES_NO_CORR_RTS",
-#         "PERCENT_YES_BODIES_CORR_KF",
+#         # "PERCENT_YES_BODIES_CORR_KF",
 #         "PERCENT_YES_BODIES_CORR_RTS",
 #     ]
 # ).legend(loc='best')
