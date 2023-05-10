@@ -10,19 +10,16 @@ from utils import logit, inv_logit
 
 # %%
 def load_q42research_purpose_bm(
-    database="FUSEDDATA",
-    schema="LEVER_JSTEP",
-    table="BIZCATE_NORMALIZED_Q42RESEARCH_PURPOSE_BM",
+    database="L2SURVEY",
+    schema="MASPL_ROLLUP",
+    table="A098_Q42RESEARCH",
     cut_ids=None,
     logit_transform=True,
 ):
     """Q42a - Online Research purpose - brick"""
 
-    a099_q42research_purpose_bm = (
+    a098_q42research_purpose_bm = (
         fdb[database][schema][table](lazy=True)
-        >> rename(
-            BIZCATE_CODE = _.SUB_CODE,
-        )
         >> filter(
             ~_.CUT_ID.isna(),
             _.CUT_ID.isin([1] + cut_ids) if cut_ids is not None else True,
@@ -30,7 +27,7 @@ def load_q42research_purpose_bm(
         >> left_join(_, month_mapping, on="MONTH_NUM")
         >> select(
             _.CUT_ID,
-            _.BIZCATE_CODE,
+            _.SUB_CODE,
             _.OPTION,
             _.MONTH_YEAR,
             _.ASK_COUNT,
@@ -38,12 +35,19 @@ def load_q42research_purpose_bm(
             _.PERCENT_YES,
         )
         >> collect()
+        >> distinct(
+            _.CUT_ID,
+            _.SUB_CODE,
+            _.OPTION,
+            _.MONTH_YEAR,
+            _keep_all=True
+        )
     )
 
     if logit_transform:
-        a099_q42research_purpose_bm["PERCENT_YES"] = logit(a099_q42research_purpose_bm["PERCENT_YES"])
+        a098_q42research_purpose_bm["PERCENT_YES"] = logit(a098_q42research_purpose_bm["PERCENT_YES"])
 
-    return a099_q42research_purpose_bm
+    return a098_q42research_purpose_bm
 
 
 # %%
@@ -52,7 +56,7 @@ def dataloader(table):
         table=table,
         id_cols=["CUT_ID", "OPTION"],
         date_col="MONTH_YEAR",
-        var_cols=["BIZCATE_CODE"],
+        var_cols=["SUB_CODE"],
     )
 
 
@@ -87,35 +91,36 @@ runner = Runner(
 outputs = []
 
 # %%
-a099_q42research_purpose_bm = load_q42research_purpose_bm()
+a098_q42research_purpose_bm = load_q42research_purpose_bm()
 
+# %%
 # ----------------------------------------------------------------
 # filter national
 # ----------------------------------------------------------------
 
-a099_national = (
-    a099_q42research_purpose_bm
+a098_national = (
+    a098_q42research_purpose_bm
     >> filter(_.CUT_ID == 1)
     >> rename(PERCENT_YES_NATIONAL=_.PERCENT_YES)
 )
 
-a099_national_dl = dataloader(a099_national)
-a099_national_kf_module_no_corr = no_corr_kf_module("PERCENT_YES_NATIONAL")
-a099_national_kf_module_corr = corr_kf_module("PERCENT_YES_NATIONAL")
+a098_national_dl = dataloader(a098_national)
+a098_national_kf_module_no_corr = no_corr_kf_module("PERCENT_YES_NATIONAL")
+a098_national_kf_module_corr = corr_kf_module("PERCENT_YES_NATIONAL")
 
-a099_national_filtered = runner.run(
+a098_national_filtered = runner.run(
     models=[
-        a099_national_kf_module_no_corr,
-        a099_national_kf_module_corr,
+        a098_national_kf_module_no_corr,
+        a098_national_kf_module_corr,
     ],
-    dataloaders=a099_national_dl,
+    dataloaders=a098_national_dl,
 )
 
 # %%
-a099_national_filtered_renamed = (
-    a099_national_filtered
+a098_national_filtered_renamed = (
+    a098_national_filtered
     >> rename(
-        **{col.replace("_NATIONAL", ""): col for col in a099_national_filtered.columns}
+        **{col.replace("_NATIONAL", ""): col for col in a098_national_filtered.columns}
     )
     >> select(~_.endswith("_KF"))
     # >> mutate(
@@ -132,30 +137,30 @@ a099_national_filtered_renamed = (
     # )
 )
 
-outputs.append(a099_national_filtered_renamed)
+outputs.append(a098_national_filtered_renamed)
 
 # %%
 # ----------------------------------------------------------------
 # filter demo cuts using delta method
 # ----------------------------------------------------------------
 
-a099_demo = (
-    a099_q42research_purpose_bm
+a098_demo = (
+    a098_q42research_purpose_bm
     >> filter(_.CUT_ID != 1)
     >> rename(PERCENT_YES_DEMO=_.PERCENT_YES)
 )
 
 # %% calculate demo cuts deltas
-a099_demo_delta = (
+a098_demo_delta = (
     inner_join(
-        a099_national
+        a098_national
         >> select(
             ~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT
         ),  # fmt: skip
-        a099_demo,
+        a098_demo,
         on=[
             "OPTION",
-            "BIZCATE_CODE",
+            "SUB_CODE",
             "MONTH_YEAR",
         ],
     )
@@ -167,23 +172,23 @@ a099_demo_delta = (
 
 
 # %% filter demo cuts deltas
-a099_demo_delta_dl = dataloader(a099_demo_delta)
-a099_demo_kf_module_no_corr = no_corr_kf_module("PERCENT_YES_DELTA")
-a099_demo_kf_module_corr = corr_kf_module("PERCENT_YES_DELTA")
+a098_demo_delta_dl = dataloader(a098_demo_delta)
+a098_demo_kf_module_no_corr = no_corr_kf_module("PERCENT_YES_DELTA")
+a098_demo_kf_module_corr = corr_kf_module("PERCENT_YES_DELTA")
 
-a099_demo_delta_filtered = runner.run(
-    models=[a099_demo_kf_module_no_corr, a099_demo_kf_module_corr],
-    dataloaders=a099_demo_delta_dl,
+a098_demo_delta_filtered = runner.run(
+    models=[a098_demo_kf_module_no_corr, a098_demo_kf_module_corr],
+    dataloaders=a098_demo_delta_dl,
 )
 
 # %% apply national
-a099_demo_filtered = (
+a098_demo_filtered = (
     inner_join(
-        a099_national_filtered >> select(~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT),
-        a099_demo_delta_filtered,
+        a098_national_filtered >> select(~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT),
+        a098_demo_delta_filtered,
         on=[
             "OPTION",
-            "BIZCATE_CODE",
+            "SUB_CODE",
             "MONTH_YEAR",
         ],
     )
@@ -211,9 +216,9 @@ a099_demo_filtered = (
 )
 
 # %%
-a099_demo_filtered_renamed = (
-    a099_demo_filtered
-    >> rename(**{col.replace("_DEMO", ""): col for col in a099_demo_filtered.columns})
+a098_demo_filtered_renamed = (
+    a098_demo_filtered
+    >> rename(**{col.replace("_DEMO", ""): col for col in a098_demo_filtered.columns})
     # >> mutate(
     #     across(
     #         _[_.endswith("_KF"), _.endswith("_RTS")],
@@ -228,40 +233,40 @@ a099_demo_filtered_renamed = (
     # )
 )
 
-outputs.append(a099_demo_filtered_renamed)
+outputs.append(a098_demo_filtered_renamed)
 
 # %%
-a099_filtered = pd.concat(outputs, ignore_index=True)
+a098_filtered = pd.concat(outputs, ignore_index=True)
 
 # %%
-a099_filtered["PERCENT_YES"] = inv_logit(a099_filtered["PERCENT_YES"])
-a099_filtered["PERCENT_YES_NO_CORR_RTS"] = inv_logit(a099_filtered["PERCENT_YES_NO_CORR_RTS"])
-a099_filtered["PERCENT_YES_CORR_RTS"] = inv_logit(a099_filtered["PERCENT_YES_CORR_RTS"])
+a098_filtered["PERCENT_YES"] = inv_logit(a098_filtered["PERCENT_YES"])
+a098_filtered["PERCENT_YES_NO_CORR_RTS"] = inv_logit(a098_filtered["PERCENT_YES_NO_CORR_RTS"])
+a098_filtered["PERCENT_YES_CORR_RTS"] = inv_logit(a098_filtered["PERCENT_YES_CORR_RTS"])
 
 # %% upload
 fdb.upload(
-    df=a099_filtered,
+    df=a098_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="BIZCATE_NORMALIZED_M099_Q42RESEARCH_PURPOSE_BM",
+    table="MASPL_FILTERED_M098_Q42RESEARCH",
     if_exists="replace",
 )
 
 # %% test
-# (
-#     a099_filtered
-#     >> filter(
-#         _.CUT_ID == 1,
-#         _.OPTION == 2,
-#         _.BIZCATE_CODE == 112,
-#     )
-# ).plot(
-#     x = "MONTH_YEAR",
-#     y = [
-#         "PERCENT_YES",
-#         "PERCENT_YES_NO_CORR_RTS",
-#         "PERCENT_YES_CORR_RTS",
-#     ]
-# ).legend(loc='best')
+(
+    a098_filtered
+    >> filter(
+        _.CUT_ID == 1,
+        _.OPTION == 2,
+        _.SUB_CODE == 362,
+    )
+).plot(
+    x = "MONTH_YEAR",
+    y = [
+        "PERCENT_YES",
+        "PERCENT_YES_NO_CORR_RTS",
+        "PERCENT_YES_CORR_RTS",
+    ]
+).legend(loc='best')
 
 # %%

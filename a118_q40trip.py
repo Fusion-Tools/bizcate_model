@@ -10,9 +10,9 @@ from utils import logit, inv_logit
 
 # %%
 def load_q40trip(
-    database="FUSEDDATA",
-    schema="LEVER_JSTEP",
-    table="BIZCATE_NORMALIZED_Q40TRIP",
+    database="L2SURVEY",
+    schema="MASPL_ROLLUP",
+    table="A118_Q40TRIP",
     cut_ids=None,
     logit_transform=True,
 ):
@@ -20,9 +20,6 @@ def load_q40trip(
 
     a118_q40trip = (
         fdb[database][schema][table](lazy=True)
-        >> rename(
-            BIZCATE_CODE = _.SUB_CODE, 
-        )
         >> filter(
             ~_.CUT_ID.isna(),
             _.CUT_ID.isin([1] + cut_ids) if cut_ids is not None else True,
@@ -30,7 +27,7 @@ def load_q40trip(
         >> left_join(_, month_mapping, on="MONTH_NUM")
         >> select(
             _.CUT_ID,
-            _.BIZCATE_CODE,  # FIXME: ?
+            _.SUB_CODE,  # FIXME: ?
             _.RETAILER_CODE,
             _.OPTION,
             _.MONTH_YEAR,
@@ -53,7 +50,7 @@ def dataloader(table):
         table=table,
         id_cols=["CUT_ID", "OPTION", "RETAILER_CODE"],
         date_col="MONTH_YEAR",
-        var_cols=["BIZCATE_CODE"],
+        var_cols=["SUB_CODE"],
     )
 
 
@@ -156,7 +153,7 @@ a118_demo_delta = (
         a118_demo,
         on=[
             "OPTION",
-            "BIZCATE_CODE",
+            "SUB_CODE",
             "RETAILER_CODE",
             "MONTH_YEAR",
         ],
@@ -185,7 +182,7 @@ a118_demo_filtered = (
         a118_demo_delta_filtered,
         on=[
             "OPTION",
-            "BIZCATE_CODE",
+            "SUB_CODE",
             "RETAILER_CODE",
             "MONTH_YEAR",
         ],
@@ -246,7 +243,7 @@ fdb.upload(
     df=a118_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="BIZCATE_NORMALIZED_M118_Q40TRIP",
+    table="MASPL_FILTERED_M118_Q40TRIP",
     if_exists="replace",
 )
 
@@ -256,8 +253,8 @@ fdb.upload(
     >> filter(
         _.CUT_ID == 1,
         _.OPTION == 1,
-        _.RETAILER_CODE == 45,
-        _.BIZCATE_CODE == 111,
+        _.RETAILER_CODE == 104,
+        _.SUB_CODE == 8,
     )
 ).plot(
     x = "MONTH_YEAR",

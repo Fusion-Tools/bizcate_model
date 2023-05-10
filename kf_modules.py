@@ -21,25 +21,25 @@ import pyarrow as pa
 
 def full_bizcat_corr_matrix():
     corr_bizcats_df = (
-        fdb.FUSEDDATA.LEVER_BRAND.BIZCATE_THINK_CORRELATION(lazy=True)
-        >> select(_.BIZCATE_CODE, _.SIMILAR_BIZCATE_CODE, _.CORRELATION)
-        >> arrange(_.BIZCATE_CODE, _.SIMILAR_BIZCATE_CODE)
+        fdb.FUSEDDATA.LEVER_INDUSTRY.COMPSHARE_THINK_SUBCATEGORY_CORRELATION(lazy=True)
+        >> select(_.SUB_CODE, _.SIMILAR_SUB_CODE, _.CORRELATION)
+        >> arrange(_.SUB_CODE, _.SIMILAR_SUB_CODE)
         >> collect()
-    ).set_index(["BIZCATE_CODE", "SIMILAR_BIZCATE_CODE"])
+    ).set_index(["SUB_CODE", "SIMILAR_SUB_CODE"])
 
-    bizcats_with_corr = corr_bizcats_df.index.get_level_values("BIZCATE_CODE").unique()
+    bizcats_with_corr = corr_bizcats_df.index.get_level_values("SUB_CODE").unique()
     complete_bizcat_index = pd.RangeIndex(
         min(bizcats_with_corr), max(bizcats_with_corr) + 1
     )
     multi_index = pd.MultiIndex.from_product(
         [complete_bizcat_index, complete_bizcat_index],
-        names=["BIZCATE_CODE", "SIMILAR_BIZCATE_CODE"],
+        names=["SUB_CODE", "SIMILAR_SUB_CODE"],
     )
 
     corr_all_bizcats_df = (
         corr_bizcats_df.reindex(multi_index, fill_value=0)  # FIXME: temp imputation
         .reset_index()
-        .pivot_table(index="BIZCATE_CODE", columns="SIMILAR_BIZCATE_CODE", values="CORRELATION")
+        .pivot_table(index="SUB_CODE", columns="SIMILAR_SUB_CODE", values="CORRELATION")
     )
 
     return corr_all_bizcats_df
@@ -56,7 +56,7 @@ class BizcateCorrelationKFModule(KFModule):
         super().__init__(metric_col=metric_col, output_col_prefix=output_col_prefix)
 
     def process_covariance(self, raw_df):
-        bizcats = raw_df.columns.get_level_values("BIZCATE_CODE").unique().to_numpy()
+        bizcats = raw_df.columns.get_level_values("SUB_CODE").unique().to_numpy()
         corr_bizcats = self.corr_all_bizcats_df.loc[bizcats, bizcats].to_numpy()
         # Q_bizcats (across bizcats)
         cov_bizcats = corr_bizcats * (self.process_std**2)
