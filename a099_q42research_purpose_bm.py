@@ -10,9 +10,9 @@ from utils import logit, inv_logit
 
 # %%
 def load_q42research_purpose_bm(
-    database="L2SURVEY",
-    schema="MASPL_ROLLUP",
-    table="A098_Q42RESEARCH",
+    database="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    table="MASPL_NORMALIZED_Q40TRIP",
     cut_ids=None,
     logit_transform=True,
 ):
@@ -248,7 +248,7 @@ fdb.upload(
     df=a098_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="MASPL_FILTERED_M098_Q42RESEARCH",
+    table="MASPL_NORMALIZED_M098_Q42RESEARCH",
     if_exists="replace",
 )
 
@@ -258,7 +258,7 @@ fdb.upload(
     >> filter(
         _.CUT_ID == 1,
         _.OPTION == 2,
-        _.SUB_CODE == 362,
+        _.SUB_CODE == 14,
     )
 ).plot(
     x = "MONTH_YEAR",

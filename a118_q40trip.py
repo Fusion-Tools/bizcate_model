@@ -10,9 +10,9 @@ from utils import logit, inv_logit
 
 # %%
 def load_q40trip(
-    database="L2SURVEY",
-    schema="MASPL_ROLLUP",
-    table="A118_Q40TRIP",
+    database="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    table="MASPL_NORMALIZED_Q40TRIP",
     cut_ids=None,
     logit_transform=True,
 ):
@@ -87,6 +87,7 @@ outputs = []
 # %%
 a118_q40trip = load_q40trip()
 
+# %%
 # ----------------------------------------------------------------
 # filter national
 # ----------------------------------------------------------------
@@ -243,7 +244,7 @@ fdb.upload(
     df=a118_filtered,
     database="FUSEDDATA",
     schema="DATASCI_LAB",
-    table="MASPL_FILTERED_M118_Q40TRIP",
+    table="MASPL_NORMALIZED_M118_Q40TRIP",
     if_exists="replace",
 )
 
@@ -253,7 +254,7 @@ fdb.upload(
     >> filter(
         _.CUT_ID == 1,
         _.OPTION == 1,
-        _.RETAILER_CODE == 104,
+        _.RETAILER_CODE == 115,
         _.SUB_CODE == 8,
     )
 ).plot(
