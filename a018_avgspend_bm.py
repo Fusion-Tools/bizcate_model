@@ -4,9 +4,10 @@ import pandas as pd
 from siuba import *
 from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
-from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
+from fusion_kf.callbacks import PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
-from callbacks import Scaler
+from fusion_kf.callbacks import Scaler
+from sklearn.preprocessing import StandardScaler, PowerTransformer
 
 
 # %%
@@ -74,7 +75,7 @@ def corr_kf_module(metric_col):
 # fmt: off
 runner = Runner(
     callbacks=[
-        Scaler(),
+        Scaler(PowerTransformer, method="yeo-johnson"),
         PivotLong(),
         ConcactPartitions()
     ]
@@ -233,30 +234,30 @@ outputs.append(a018_demo_filtered_renamed)
 a018_filtered = pd.concat(outputs, ignore_index=True)
 
 # %% upload
-fdb.upload(
-    df=a018_filtered,
-    database="FUSEDDATA",
-    schema="DATASCI_LAB",
-    table="BIZCATE_M018_AVGSPEND_BM",
-    if_exists="replace",
-)
+# fdb.upload(
+#     df=a018_filtered,
+#     database="FUSEDDATA",
+#     schema="DATASCI_LAB",
+#     table="BIZCATE_M018_AVGSPEND_BM",
+#     if_exists="replace",
+# )
 
 # %% test
-# (
-#     a018_filtered
-#     >> filter(
-#         _.CUT_ID == 1,
-#         _.BIZCATE_CODE == 417,
-#     )
-# ).plot(
-#     x="MONTH_YEAR",
-#     y=[
-#         "AVG_SPEND",
-#         "AVG_SPEND_NO_CORR_KF",
-#         "AVG_SPEND_NO_CORR_RTS",
-#         "AVG_SPEND_CORR_RTS",
-#     ],
-# ).legend(loc="best")
+(
+    a018_filtered
+    >> filter(
+        _.CUT_ID == 1,
+        _.BIZCATE_CODE == 417, # 417, 111
+    )
+).plot(
+    x="MONTH_YEAR",
+    y=[
+        "AVG_SPEND",
+        "AVG_SPEND_NO_CORR_KF",
+        "AVG_SPEND_NO_CORR_RTS",
+        "AVG_SPEND_CORR_RTS",
+    ],
+).legend(loc="best")
 
 # %%
 # code 424
