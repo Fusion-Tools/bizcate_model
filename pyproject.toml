@@ -13,6 +13,7 @@ python-dotenv = "^1.0.0"
 fusion-db = {git = "https://github.com/Fusion-Tools/fusion_db.git"}
 scikit-learn = "^1.2.2"
 fusion-kf = {git = "https://github.com/Fusion-Tools/fusion_kf.git", rev = "scaler-callback"}
+antlr4-python3-runtime = "^4.13.0"
 
 [tool.poetry.group.dev.dependencies]
 jupyter = "^1.0.0"
