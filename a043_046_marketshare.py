@@ -5,7 +5,7 @@ from siuba import *
 from siuba.dply.vector import *
 from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
-from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
+from fusion_kf.callbacks import PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
 from utils import logit, inv_logit
 
@@ -456,33 +456,33 @@ marketshare_bizcate_filtered["MARKET_SHARE_CORR_RTS"] = inv_logit(
 
 
 # %%
-fdb.upload(
-    df=marketshare_bizcate_filtered,
-    database="FUSEDDATA",
-    schema="DATASCI_LAB",
-    table="BIZCATE_M043_046_MARKETSHARE",
-    if_exists="replace",
-)
+# fdb.upload(
+#     df=marketshare_bizcate_filtered,
+#     database="FUSEDDATA",
+#     schema="DATASCI_LAB",
+#     table="BIZCATE_M043_046_MARKETSHARE",
+#     if_exists="replace",
+# )
 
 # %%
-# (
-#     marketshare_bizcate_filtered
-#     >> filter(
-#         _.CHANNEL == "BM",
-#         _.CUT_ID == 1,
-#         _.BIZCATE_CODE == 111,
-#         _.RETAILER_CODE == 115
-#     )
-# ).plot(
-#     x="MONTH_YEAR",
-#     y=[
-#         "MARKET_SHARE",
-#         "MARKET_SHARE_NO_CORR_RTS",
-#         "MARKET_SHARE_CORR_RTS",
-#     ],
-# ).legend(
-#     loc="best"
-# )
+(
+    marketshare_bizcate_filtered
+    >> filter(
+        _.CHANNEL == "BM",
+        _.CUT_ID == 1,
+        _.BIZCATE_CODE == 105,
+        _.RETAILER_CODE == 87
+    )
+).plot(
+    x="MONTH_YEAR",
+    y=[
+        "MARKET_SHARE",
+        "MARKET_SHARE_NO_CORR_RTS",
+        "MARKET_SHARE_CORR_RTS",
+    ],
+).legend(
+    loc="best"
+)
 
 
 # %%
