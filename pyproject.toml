@@ -11,8 +11,8 @@ python = ">3.8,<4.0"
 siuba = "^0.4.2"
 python-dotenv = "^1.0.0"
 fusion-db = {git = "https://github.com/Fusion-Tools/fusion_db.git"}
-fusion-kf = {git = "https://github.com/Fusion-Tools/fusion_kf.git"}
 scikit-learn = "^1.2.2"
+fusion-kf = {git = "https://github.com/Fusion-Tools/fusion_kf.git", rev = "scaler-callback"}
 
 [tool.poetry.group.dev.dependencies]
 jupyter = "^1.0.0"

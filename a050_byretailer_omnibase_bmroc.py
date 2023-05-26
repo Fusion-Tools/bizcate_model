@@ -28,10 +28,11 @@ def load_bmroc(
         >> filter(
             ~_.CUT_ID.isna(),
             _.CUT_ID.isin([1] + cut_ids) if cut_ids is not None else True,
-            _.IMPUTED == 0, # TODO: ?
+            # _.IMPUTED == 0, # TODO: ?
         )
         >> left_join(_, month_mapping, on="MONTH_NUM")
         >> select(
+            _.IMPUTED,
             _.CUT_ID,
             _.BIZCATE_CODE,
             _.RETAILER_CODE,
@@ -61,7 +62,7 @@ def load_bmroc(
 def dataloader(table):
     return DataLoader(
         table=table,
-        id_cols=["CUT_ID", "RETAILER_CODE", "METRIC"],
+        id_cols=["IMPUTED", "CUT_ID", "RETAILER_CODE", "METRIC"],
         date_col="MONTH_YEAR",
         var_cols=["BIZCATE_CODE"],
     )
@@ -165,6 +166,7 @@ a050_demo_delta = (
         ),  # fmt: skip
         a050_demo,
         on=[
+            "IMPUTED",
             "RETAILER_CODE", 
             "METRIC",
             "BIZCATE_CODE",
@@ -194,6 +196,7 @@ a050_demo_filtered = (
         a050_national_filtered >> select(~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT_SPEND),
         a050_demo_delta_filtered,
         on=[
+            "IMPUTED",
             "RETAILER_CODE", 
             "METRIC",
             "BIZCATE_CODE",
@@ -264,6 +267,7 @@ fdb.upload(
 (
     a050_filtered
     >> filter(
+        _.IMPUTED == 1,
         _.CUT_ID == 1,
         _.RETAILER_CODE == 115,
         _.BIZCATE_CODE == 111,
