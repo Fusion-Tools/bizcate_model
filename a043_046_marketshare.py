@@ -5,7 +5,7 @@ from siuba import *
 from siuba.dply.vector import *
 from fusion_kf import DataLoader, Runner
 from fusion_kf.kf_modules import NoCorrelationKFModule
-from fusion_kf.callbacks import LogitTransform, PivotLong, ConcactPartitions
+from fusion_kf.callbacks import PivotLong, ConcactPartitions
 from kf_modules import BizcateCorrelationKFModule
 from utils import logit, inv_logit
 
@@ -131,110 +131,6 @@ def fetch_raw_market_share(
     return completed_market_share
 
 
-# %% Collect bm and ecom market share
-
-bm_marketshare_maspl = fetch_raw_market_share(
-    db="L2SURVEY",
-    schema="MASPL_ROLLUP",
-    tbl_name="A043_BYRETAILER_BMBASE_MARKETSHARE",
-    retailers=None,
-    channel="BM",
-    logit_transform=True,
-    cut_ids=CUT_IDS,
-)
-ecom_marketshare_maspl = fetch_raw_market_share(
-    db="L2SURVEY",
-    schema="MASPL_ROLLUP",
-    tbl_name="A046_BYRETAILER_ECOMBASE_MARKETSHARE",
-    retailers=None,
-    channel="Ecom",
-    logit_transform=True,
-    cut_ids=CUT_IDS,
-)
-
-marketshare_maspl = pd.concat([bm_marketshare_maspl, ecom_marketshare_maspl]) >> rename(
-    MARKET_SHARE=_.SHARE_FINAL
-)
-
-
-# %% Define the Bizcate mapping table
-bizcate_sub_mapping = (
-    fdb.FUSEDDATA.LEVER_JSTEP.LOOKUP_BIZCATE_SUBCATE_QUOTA(lazy=True)
-    >> filter(_.BIZCATE_CODE.notna())
-    >> distinct(_.BIZCATE_CODE, _.SUB_CODE)
-    >> collect()
-)
-
-# %% collect bm and ecom market share for bizcate
-bm_marketshare_bizcate = fetch_raw_market_share(
-    db="FUSEDDATA",
-    schema="LEVER_JSTEP",
-    tbl_name="BIZCATE_NORMALIZED_BYRETAILER_BMBASE_MARKETSHARE",
-    retailers=None,
-    channel="BM",
-    logit_transform=True,
-    cut_ids=CUT_IDS,
-)
-ecom_marketshare_bizcate = fetch_raw_market_share(
-    db="FUSEDDATA",
-    schema="LEVER_JSTEP",
-    tbl_name="BIZCATE_NORMALIZED_BYRETAILER_ECOMBASE_MARKETSHARE",
-    retailers=None,
-    channel="Ecom",
-    logit_transform=True,
-    cut_ids=CUT_IDS,
-)
-
-marketshare_bizcate = (
-    pd.concat([bm_marketshare_bizcate, ecom_marketshare_bizcate])
-    >> rename(BIZCATE_CODE=_.SUB_CODE, MARKET_SHARE=_.SHARE_FINAL)
-    >> left_join(_, bizcate_sub_mapping, on="BIZCATE_CODE")
-)
-
-
-# %%
-# %%
-def fetch_filtered_market_share(
-    db="L2METRICS",
-    schema="DASH_ZZ_COMMON",
-    tbl_name="AUDITED_011_BANNERSHARE",
-    logit_transform=True,
-):
-    marketshare_national = (
-        fdb[db][schema][tbl_name](lazy=True)
-        >> select(
-            _.FUSION_REGION_CODE,
-            _.CHANNEL,
-            _.RETAILER_CODE,
-            _.SUB_CODE,
-            _.MONTH_YEAR,
-            _.MARKET_SHARE,
-        )
-        >> filter(_.FUSION_REGION_CODE == 0, _.CHANNEL.isin(["BM", "Ecom"]))
-        >> mutate(CUT_ID=case_when(_, {_.FUSION_REGION_CODE == 0: 1, True: 0}))
-        >> select(~_.FUSION_REGION_CODE)
-        >> rename(MARKET_SHARE_SMOOTHED=_.MARKET_SHARE)
-        >> collect()
-    )
-     # Convert to logit space if specified in the function call
-    if logit_transform:
-        marketshare_national["MARKET_SHARE_SMOOTHED"] = logit(
-            marketshare_national["MARKET_SHARE_SMOOTHED"]
-        )
-
-    return marketshare_national
-
-
-# %%
-marketshare_maspl_national_filtered = fetch_filtered_market_share(
-    db="L2METRICS",
-    schema="DASH_ZZ_COMMON",
-    tbl_name="AUDITED_011_BANNERSHARE",
-    logit_transform=True,
-)
-
-
-# %%
 # %%
 def dataloader(table):
     return DataLoader(
@@ -267,6 +163,31 @@ def corr_kf_module(metric_col):
     )
 
 
+# %% collect bm and ecom market share for bizcate
+bm_marketshare_bizcate = fetch_raw_market_share(
+    db="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    tbl_name="BIZCATE_NORMALIZED_BYRETAILER_BMBASE_MARKETSHARE",
+    retailers=None,
+    channel="BM",
+    logit_transform=True,
+    cut_ids=CUT_IDS,
+)
+ecom_marketshare_bizcate = fetch_raw_market_share(
+    db="FUSEDDATA",
+    schema="LEVER_JSTEP",
+    tbl_name="BIZCATE_NORMALIZED_BYRETAILER_ECOMBASE_MARKETSHARE",
+    retailers=None,
+    channel="Ecom",
+    logit_transform=True,
+    cut_ids=CUT_IDS,
+)
+
+marketshare_bizcate = (
+    pd.concat([bm_marketshare_bizcate, ecom_marketshare_bizcate])
+    >> rename(BIZCATE_CODE=_.SUB_CODE, MARKET_SHARE=_.SHARE_FINAL)
+)
+
 # %%
 # fmt: off
 runner = Runner(
@@ -277,78 +198,22 @@ runner = Runner(
 )
 # fmt: on
 
-# %%
-marketshare_maspl_national = (
-    marketshare_maspl
-    >> filter(_.CUT_ID == 1)
-    >> rename(MARKET_SHARE_MASPL=_.MARKET_SHARE)
-)
 marketshare_bizcate_national = marketshare_bizcate >> filter(_.CUT_ID == 1)
 
-# %% calculate national deltas to maspl
-marketshare_bizcate_national_delta = (
-    inner_join(
-        marketshare_maspl_national >> select(~_.ASK_COUNT, ~_.ASK_WEIGHT),
-        marketshare_bizcate_national,
-        on=[
-            "CUT_ID",
-            "CHANNEL",
-            "RETAILER_CODE",
-            "SUB_CODE",
-            "MONTH_YEAR",
-        ],
-    )
-    >> mutate(
-        MARKET_SHARE_DELTA=_.MARKET_SHARE_MASPL - _.MARKET_SHARE,  # fmt: skip
-    )
-    >> select(~_.SUB_CODE, ~_.MARKET_SHARE_MASPL)
-)
-
 # %% filter bizcate deltas to national
-marketshare_bizcate_national_delta_dl = dataloader(marketshare_bizcate_national_delta)
-marketshare_kf_module_no_corr = no_corr_kf_module("MARKET_SHARE_DELTA")
-marketshare_kf_module_corr = corr_kf_module("MARKET_SHARE_DELTA")
+marketshare_bizcate_national_dl = dataloader(marketshare_bizcate_national)
+marketshare_kf_module_no_corr = no_corr_kf_module("MARKET_SHARE")
+marketshare_kf_module_corr = corr_kf_module("MARKET_SHARE")
 
-marketshare_bizcate_national_delta_filtered = runner.run(
+marketshare_bizcate_national_filtered = runner.run(
     models=[
         marketshare_kf_module_no_corr,
         marketshare_kf_module_corr,
     ],
-    dataloaders=marketshare_bizcate_national_delta_dl,
+    dataloaders=marketshare_bizcate_national_dl,
 )
 
-# %% apply filtered maspl
-
-marketshare_bizcate_national_filtered = (
-    inner_join(
-        (
-            marketshare_maspl_national_filtered
-            >> inner_join(_, bizcate_sub_mapping, on="SUB_CODE")
-        ),
-        marketshare_bizcate_national_delta_filtered,
-        on=[
-            "CUT_ID",
-            "CHANNEL",
-            "RETAILER_CODE",
-            "BIZCATE_CODE",
-            "MONTH_YEAR",
-        ],
-    )
-    >> select(~_.endswith("KF"))
-    # fmt: off
-    >> mutate(
-        MARKET_SHARE_NO_CORR_RTS=_.MARKET_SHARE_SMOOTHED - _.MARKET_SHARE_DELTA_NO_CORR_RTS,
-        MARKET_SHARE_CORR_RTS=_.MARKET_SHARE_SMOOTHED - _.MARKET_SHARE_DELTA_CORR_RTS,
-    )
-    # fmt:on
-    >> select(
-        ~_.SUB_CODE,
-        ~_.MARKET_SHARE_DELTA,
-        ~_.MARKET_SHARE_DELTA_NO_CORR_RTS,
-        ~_.MARKET_SHARE_DELTA_CORR_RTS,
-        ~_.MARKET_SHARE_SMOOTHED,
-    )
-)
+marketshare_bizcate_national_filtered = marketshare_bizcate_national_filtered >> select(~_.endswith("KF"))
 
 # %% calculate regions deltas to bizcate natioanl
 marketshare_bizcate_regional = marketshare_bizcate >> filter(_.CUT_ID != 1)
@@ -358,10 +223,10 @@ marketshare_bizcate_regional_delta = (
     inner_join(
         (
             marketshare_bizcate_national
-            >> select(~_.SUB_CODE, ~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT)
+            >> select(~_.CUT_ID, ~_.ASK_COUNT, ~_.ASK_WEIGHT)
             >> rename(MARKET_SHARE_NATIONAL=_.MARKET_SHARE)
         ),
-        marketshare_bizcate_regional >> select(~_.SUB_CODE),
+        marketshare_bizcate_regional,
         on=[
             "CHANNEL",
             "RETAILER_CODE",
@@ -377,11 +242,13 @@ marketshare_bizcate_regional_delta = (
 
 # %% filter demo cuts deltas to national
 marketshare_bizcate_regional_delta_dl = dataloader(marketshare_bizcate_regional_delta)
+marketshare_delta_kf_module_no_corr = no_corr_kf_module("MARKET_SHARE_DELTA")
+marketshare_delta_kf_module_corr = corr_kf_module("MARKET_SHARE_DELTA")
 
 marketshare_bizcate_regional_delta_filtered = runner.run(
     models=[
-        marketshare_kf_module_no_corr,
-        marketshare_kf_module_corr,
+        marketshare_delta_kf_module_no_corr,
+        marketshare_delta_kf_module_corr,
     ],
     dataloaders=marketshare_bizcate_regional_delta_dl,
 )
@@ -470,8 +337,8 @@ fdb.upload(
 #     >> filter(
 #         _.CHANNEL == "BM",
 #         _.CUT_ID == 1,
-#         _.BIZCATE_CODE == 111,
-#         _.RETAILER_CODE == 115,
+#         _.BIZCATE_CODE == 105,
+#         _.RETAILER_CODE == 17,
 #     )
 # ).plot(
 #     x="MONTH_YEAR",
